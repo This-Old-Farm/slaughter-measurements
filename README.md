@@ -6,8 +6,6 @@ Configuring a computer that currently has only one job: reliably collecting and 
 
 ### Barcode Scanner
 
-TODO add link to tech manual
-
 The barcode scanner is connected by USB and operates as a USB HID keyboard device.
 
 Linux exposes the scanner as an input device. During initial testing it was:
@@ -23,8 +21,6 @@ sudo evtest /dev/input/event14
 ```
 
 ### Scale Indicator
-
-TODO add link to manual in google-drive
 
 The scale indicator is an MSI-8000HD connected directly to the laptop's built-in RS-232 serial port.
 
@@ -111,31 +107,3 @@ READY - Scan next animal.
 
 The current animal ID is then cleared so that another weight cannot
 accidentally be assigned to the same animal.
-
-## Known Prototype Limitations
-
-This is not production-ready yet.
-
-Known limitations include:
-
--   Scanner device path is hardcoded as `/dev/input/event14`.
--   Captured records are not saved to disk.
--   There is no timestamp or event ID.
--   There is no network/API interface.
--   There is no retry/synchronization system.
--   LOAD/CONT/USER mode behavior still needs to be validated under actual operating conditions.
--   Error recovery and operator correction workflows are not complete.
--   The system has not yet been tested under slaughter-floor environmental conditions.
-
-## Planned Next Steps
-
-After reliable `ID,weight` capture is proven:
-
-1.  Replace the scanner's `event14` path with a persistent `/dev/input/by-id/` device path.
-2.  Add timestamps to every capture.
-5.  Implement propper logging and sqlite storage.
-6.  Add an HTTP API for another computer/service to retrieve captured records.
-7.  Mark records as synchronized after successful retrieval.
-8.  Test operation during a network outage.
-9.  Configure the capture program to start automatically when Linux boots.
-10. Run the capture computer headlessly without a keyboard or monitor.
