@@ -2,6 +2,12 @@
 
 Configuring a computer that currently has only one job: reliably collecting and preserving animal ID/weight events.
 
+`listen.py` starts measurement recording
+
+`shout.py` starts a simple http server to share the measurements
+- http://localhost/test displays the table
+- http://localhost/get?seconds=N is an api which accepts an integer number of seconds, and returns json for all measurements taken in the most recent N seconds
+
 ## Current Hardware Setup
 
 ### Barcode Scanner
@@ -60,50 +66,36 @@ Useful diagnostic tools:
 sudo apt install evtest minicom
 ```
 
-## Combined Capture Program
+## System Time
 
-Run the prototype:
+Measurements are timestamped with the system clock, so accurate time matters. NTP must be active:
 
 ``` bash
-sudo python3 listen.py
+timedatectl
 ```
 
-## Expected Workflow
+Expect `NTP: active` and `System clock synchronized: yes`. If not, enable it:
 
-The program begins in a state where it is waiting for an animal ID.
-
-``` text
-READY - Scan an animal.
+``` bash
+sudo timedatectl set-ntp true
 ```
 
-Scan:
+## Using the API
 
-``` text
-BEEF010
+Get measurements from the last minute:
+
+``` bash
+curl "http://localhost/get?seconds=60"
 ```
 
-The program should display:
+## Simulation Tool
 
-``` text
-SCANNED: BEEF010
-Waiting for weight...
+`simulate-slaughter-measurements` is available in the test container for using the keyboard as the data input.
+
+``` bash
+docker build -t slaughter-test .
+docker run --rm -it --privileged -p 80:80 slaughter-test
+docker exec <container name from docker ps> simulate-slaughter-measurements
 ```
 
-When the scale sends:
-
-``` text
-1348
-```
-
-the program should produce:
-
-``` text
-==============================
-CAPTURED: BEEF010,1348
-==============================
-
-READY - Scan next animal.
-```
-
-The current animal ID is then cleared so that another weight cannot
-accidentally be assigned to the same animal.
+A bare number is treated as a weight; anything else is treated as a scan. Press `Ctrl-C` to stop.
