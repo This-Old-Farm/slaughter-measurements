@@ -1,9 +1,35 @@
+#!/usr/bin/python3
+import logging
+import os
+import select
+import sqlite3
+
 import serial
 from evdev import InputDevice, ecodes
-import select
 
-SCANNER_DEVICE = "/dev/input/event14"
-SCALE_DEVICE = "/dev/ttyS0"
+SCANNER_DEVICE = os.environ.get("SCANNER_DEVICE", "/dev/input/event14")
+SCALE_DEVICE = os.environ.get("SCALE_DEVICE", "/dev/ttyS0")
+DB_PATH = os.environ.get("DB_PATH", "/var/lib/slaughter/measurements.db")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+log = logging.getLogger("slaughter")
+
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+db = sqlite3.connect(DB_PATH)
+db.execute(
+    """
+    CREATE TABLE IF NOT EXISTS measurements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        animal_id TEXT NOT NULL,
+        weight REAL NOT NULL,
+        recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+    """
+)
+db.commit()
 
 # -------------------------
 # Connect to devices
@@ -24,10 +50,9 @@ scale = serial.Serial(
 # into the terminal / other applications.
 scanner.grab()
 
-print(f"Scanner: {scanner.name}")
-print(f"Scale:   {SCALE_DEVICE}")
-print()
-print("READY - Scan an animal.")
+log.info("Scanner: %s", scanner.name)
+log.info("Scale:   %s", SCALE_DEVICE)
+log.info("READY - Scan an animal.")
 
 # -------------------------
 # Barcode character mapping
@@ -116,9 +141,8 @@ try:
 
                         current_animal_id = barcode_buffer
 
-                        print()
-                        print(f"SCANNED: {current_animal_id}")
-                        print("Waiting for weight...")
+                        log.info("SCANNED: %s", current_animal_id)
+                        log.info("Waiting for weight...")
 
                         barcode_buffer = ""
 
@@ -145,14 +169,14 @@ try:
                 weight = float(weight_text)
 
             except (UnicodeDecodeError, ValueError):
-                print(f"WARNING: Invalid scale data: {raw!r}")
+                log.warning("Invalid scale data: %r", raw)
                 continue
 
             if current_animal_id is None:
 
-                print(
-                    f"WARNING: Weight {weight:g} received "
-                    "without an animal ID."
+                log.warning(
+                    "Weight %g received without an animal ID.",
+                    weight,
                 )
 
                 continue
@@ -161,28 +185,28 @@ try:
             # Successful capture!
             # -------------------------
 
-            print()
-            print("==============================")
-            print(
-                f"CAPTURED: "
-                f"{current_animal_id},{weight:g}"
+            db.execute(
+                "INSERT INTO measurements (animal_id, weight) VALUES (?, ?)",
+                (current_animal_id, weight),
             )
-            print("==============================")
-            print()
+            db.commit()
+
+            log.info("CAPTURED: %s,%g", current_animal_id, weight)
 
             # Require another scan before another
             # weight can be accepted.
             current_animal_id = None
 
-            print("READY - Scan next animal.")
+            log.info("READY - Scan next animal.")
 
 
 except KeyboardInterrupt:
 
-    print("\nStopping...")
+    log.info("Stopping...")
 
 
 finally:
 
     scanner.ungrab()
     scale.close()
+    db.close()

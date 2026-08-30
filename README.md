@@ -65,7 +65,7 @@ sudo apt install evtest minicom
 Run the prototype:
 
 ``` bash
-sudo python3 capture_test.py
+sudo python3 listen.py
 ```
 
 ## Expected Workflow
