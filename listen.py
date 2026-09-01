@@ -28,7 +28,7 @@ HANG_SCANNER_DEVICE = os.environ.get(
     "/dev/input/by-path/pci-0000:00:14.0-usb-0:2:1.0-event-kbd",
 )
 
-# CHANGE THIS if the hanging scale uses a different serial port.
+# CHANGE THIS if the IQ355+ uses a different serial port.
 HANG_SCALE_DEVICE = os.environ.get(
     "HANG_SCALE_DEVICE",
     "/dev/ttyUSB0",
@@ -57,7 +57,9 @@ log = logging.getLogger("slaughter")
 # ============================================================
 
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
 db = sqlite3.connect(DB_PATH)
+
 db.execute(
     """
     CREATE TABLE IF NOT EXISTS measurements (
@@ -245,37 +247,10 @@ class Station:
 
 
     # ========================================================
-    # Scale handling
+    # Save measurement
     # ========================================================
 
-    def handle_scale(self):
-
-        raw = self.scale.readline()
-
-        if not raw:
-            return
-
-        try:
-
-            weight_text = (
-                raw.decode("ascii").strip()
-            )
-
-            weight = float(weight_text)
-
-        except (UnicodeDecodeError, ValueError):
-
-            log.warning(
-                "%s: Invalid scale data: %r",
-                self.name,
-                raw,
-            )
-
-            return
-
-        # ----------------------------------------------------
-        # Weight received without an ID
-        # ----------------------------------------------------
+    def save_measurement(self, weight):
 
         if self.animal_id is None:
 
@@ -287,10 +262,6 @@ class Station:
             )
 
             return
-
-        # ----------------------------------------------------
-        # Save measurement
-        # ----------------------------------------------------
 
         db.execute(
             """
@@ -307,10 +278,6 @@ class Station:
         )
 
         db.commit()
-
-        # ----------------------------------------------------
-        # Successful capture
-        # ----------------------------------------------------
 
         log.info(
             "%s: CAPTURED: %s,%g",
@@ -347,6 +314,354 @@ class Station:
 
 
 # ============================================================
+# LIVE station - MSI-8000HD
+# ============================================================
+
+class LiveStation(Station):
+
+    def handle_scale(self):
+
+        raw = self.scale.readline()
+
+        if not raw:
+            return
+
+        try:
+
+            weight_text = (
+                raw.decode("ascii").strip()
+            )
+
+            weight = float(weight_text)
+
+        except (UnicodeDecodeError, ValueError):
+
+            log.warning(
+                "%s: Invalid scale data: %r",
+                self.name,
+                raw,
+            )
+
+            return
+
+        # Keep the original LIVE behavior.
+        self.save_measurement(weight)
+
+
+# ============================================================
+# HANG station - IQ355+
+# ============================================================
+
+class HangStation(Station):
+
+    def handle_scale(self):
+
+        raw = self.scale.readline()
+
+        if not raw:
+            return
+
+        weight = self.parse_iq355(raw)
+
+        if weight is None:
+            return
+
+        # The IQ355+ continuously streams.
+        #
+        # Valid weights are ignored until a barcode has
+        # been scanned. After a successful capture,
+        # save_measurement() clears the animal ID, so the
+        # continuing stream cannot create duplicate records.
+        if self.animal_id is None:
+            return
+
+        self.save_measurement(weight)
+
+
+    # ========================================================
+    # IQ355+ continuous-stream parser
+    # ========================================================
+
+    def parse_iq355(self, raw):
+
+        """
+        IQ355+ continuous output format:
+
+        <STX><POL><WWWWWWW><UNIT><G/N><S><TERM>
+
+        STX:
+            ASCII 02
+
+        POL:
+            space = positive
+            -     = negative
+            ^     = overload
+            ]     = underrange
+
+        WWWWWWW:
+            7-character weight field
+
+        UNIT:
+            L = pounds
+            K = kilograms
+            T = tons
+            G = grams
+            O = ounces
+
+        G/N:
+            G = gross
+            N = net
+
+        STATUS:
+            space = valid
+            I     = invalid
+            M     = motion
+            O     = over/under range
+
+        For the HANG station, only a VALID, GROSS,
+        POUNDS reading is accepted.
+        """
+
+        # ----------------------------------------------------
+        # Decode ASCII
+        # ----------------------------------------------------
+
+        try:
+
+            message = raw.decode("ascii")
+
+        except UnicodeDecodeError:
+
+            log.warning(
+                "%s: Non-ASCII IQ355+ data: %r",
+                self.name,
+                raw,
+            )
+
+            return None
+
+
+        # ----------------------------------------------------
+        # Remove ONLY CR/LF.
+        #
+        # Do NOT use .strip().
+        #
+        # A trailing space in the IQ355+ data is meaningful:
+        # it means the reading status is VALID.
+        # ----------------------------------------------------
+
+        message = message.rstrip("\r\n")
+
+
+        # ----------------------------------------------------
+        # Verify STX
+        # ----------------------------------------------------
+
+        if not message:
+            return None
+
+        if ord(message[0]) != 0x02:
+
+            log.debug(
+                "%s: IQ355+ packet missing STX: %r",
+                self.name,
+                raw,
+            )
+
+            return None
+
+
+        # ----------------------------------------------------
+        # Remove STX
+        # ----------------------------------------------------
+
+        data = message[1:]
+
+
+        # ----------------------------------------------------
+        # Expected fixed-width payload:
+        #
+        # POL       1
+        # WEIGHT    7
+        # UNIT      1
+        # G/N       1
+        # STATUS    1
+        #
+        # Total = 11 characters
+        # ----------------------------------------------------
+
+        if len(data) != 11:
+
+            log.debug(
+                "%s: IQ355+ unexpected packet "
+                "length %d: %r",
+                self.name,
+                len(data),
+                raw,
+            )
+
+            return None
+
+
+        # ----------------------------------------------------
+        # Split fields
+        # ----------------------------------------------------
+
+        polarity = data[0]
+
+        weight_text = data[1:8]
+
+        unit = data[8]
+
+        gross_net = data[9]
+
+        status = data[10]
+
+
+        # ----------------------------------------------------
+        # Polarity
+        # ----------------------------------------------------
+
+        if polarity == " ":
+
+            negative = False
+
+        elif polarity == "-":
+
+            negative = True
+
+        elif polarity == "^":
+
+            log.warning(
+                "%s: IQ355+ reports overload.",
+                self.name,
+            )
+
+            return None
+
+        elif polarity == "]":
+
+            log.warning(
+                "%s: IQ355+ reports underrange.",
+                self.name,
+            )
+
+            return None
+
+        else:
+
+            log.warning(
+                "%s: IQ355+ unknown polarity: %r",
+                self.name,
+                polarity,
+            )
+
+            return None
+
+
+        # ----------------------------------------------------
+        # Status
+        # ----------------------------------------------------
+
+        if status == "M":
+
+            # Motion is normal while the carcass is moving.
+            # Ignore it and continue waiting for a valid
+            # stable reading.
+            return None
+
+        if status == "I":
+
+            # Invalid reading.
+            return None
+
+        if status == "O":
+
+            log.warning(
+                "%s: IQ355+ reports "
+                "over/under range.",
+                self.name,
+            )
+
+            return None
+
+        if status != " ":
+
+            log.warning(
+                "%s: IQ355+ unknown status: %r",
+                self.name,
+                status,
+            )
+
+            return None
+
+
+        # ----------------------------------------------------
+        # Units
+        # ----------------------------------------------------
+
+        if unit != "L":
+
+            log.warning(
+                "%s: IQ355+ ignored reading "
+                "because unit is %r, not pounds.",
+                self.name,
+                unit,
+            )
+
+            return None
+
+
+        # ----------------------------------------------------
+        # Gross / Net
+        # ----------------------------------------------------
+
+        if gross_net != "G":
+
+            log.warning(
+                "%s: IQ355+ ignored reading "
+                "because mode is %r, not gross.",
+                self.name,
+                gross_net,
+            )
+
+            return None
+
+
+        # ----------------------------------------------------
+        # Weight
+        # ----------------------------------------------------
+
+        try:
+
+            weight = float(
+                weight_text.strip()
+            )
+
+        except ValueError:
+
+            log.warning(
+                "%s: IQ355+ invalid weight "
+                "field: %r",
+                self.name,
+                weight_text,
+            )
+
+            return None
+
+
+        if negative:
+            weight = -weight
+
+
+        # ----------------------------------------------------
+        # Valid hanging weight
+        # ----------------------------------------------------
+
+        return weight
+
+
+# ============================================================
 # Create stations
 # ============================================================
 
@@ -363,7 +678,7 @@ try:
     # LIVE station
     # --------------------------------------------------------
 
-    live = Station(
+    live = LiveStation(
         name="LIVE",
         scanner_device=LIVE_SCANNER_DEVICE,
         scale_device=LIVE_SCALE_DEVICE,
@@ -373,7 +688,7 @@ try:
     # HANG station
     # --------------------------------------------------------
 
-    hang = Station(
+    hang = HangStation(
         name="HANG",
         scanner_device=HANG_SCANNER_DEVICE,
         scale_device=HANG_SCALE_DEVICE,
@@ -383,6 +698,7 @@ try:
         live,
         hang,
     ]
+
 
     # ========================================================
     # Main loop
@@ -410,6 +726,7 @@ try:
             [],
             1,
         )
+
 
         # ----------------------------------------------------
         # Determine which station/device has data
