@@ -7,7 +7,7 @@ import sqlite3
 import serial
 from evdev import InputDevice, ecodes
 
-SCANNER_DEVICE = os.environ.get("SCANNER_DEVICE", "/dev/input/event14")
+SCANNER_DEVICE = os.environ.get("SCANNER_DEVICE", "/dev/input/by-id/usb-Scanner_Barcode_0215-event-kbd")
 SCALE_DEVICE = os.environ.get("SCALE_DEVICE", "/dev/ttyS0")
 DB_PATH = os.environ.get("DB_PATH", "/var/lib/slaughter/measurements.db")
 
