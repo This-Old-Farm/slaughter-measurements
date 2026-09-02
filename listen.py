@@ -133,6 +133,7 @@ class Station:
         name,
         scanner_device,
         scale_device,
+        scale_timeout=0,
     ):
 
         self.name = name
@@ -165,7 +166,7 @@ class Station:
             bytesize=8,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_ONE,
-            timeout=0,
+            timeout=scale_timeout,
         )
 
         log.info(
@@ -682,6 +683,7 @@ try:
         name="LIVE",
         scanner_device=LIVE_SCANNER_DEVICE,
         scale_device=LIVE_SCALE_DEVICE,
+        scale_timeout=0,
     )
 
     # --------------------------------------------------------
@@ -692,6 +694,7 @@ try:
         name="HANG",
         scanner_device=HANG_SCANNER_DEVICE,
         scale_device=HANG_SCALE_DEVICE,
+        scale_timeout=1,
     )
 
     stations = [
