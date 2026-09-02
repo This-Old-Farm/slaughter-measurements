@@ -4,6 +4,7 @@ import logging
 import os
 import select
 import sqlite3
+import signal
 
 import serial
 from evdev import InputDevice, ecodes
@@ -661,6 +662,34 @@ class HangStation(Station):
 
         return weight
 
+
+# ============================================================
+# Signal handling
+# ============================================================
+
+def handle_shutdown_signal(signum, frame):
+    """
+    Convert SIGTERM/SIGINT into a normal Python interruption
+    so execution reaches the existing finally cleanup block.
+    """
+    signal_name = signal.Signals(signum).name
+
+    log.info(
+        "Received %s. Shutting down...",
+        signal_name,
+    )
+
+    raise KeyboardInterrupt
+
+signal.signal(
+    signal.SIGTERM,
+    handle_shutdown_signal,
+)
+
+signal.signal(
+    signal.SIGINT,
+    handle_shutdown_signal,
+)
 
 # ============================================================
 # Create stations
