@@ -255,14 +255,6 @@ class Station:
     def save_measurement(self, weight):
 
         if self.animal_id is None:
-
-            log.warning(
-                "%s: Weight %g received "
-                "without an animal ID.",
-                self.name,
-                weight,
-            )
-
             return
 
         db.execute(
