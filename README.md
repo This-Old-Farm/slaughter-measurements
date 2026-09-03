@@ -99,3 +99,66 @@ docker exec <container name from docker ps> simulate-slaughter-measurements
 ```
 
 A bare number is treated as a weight; anything else is treated as a scan. Press `Ctrl-C` to stop.
+
+## Running as systemd Services
+
+The capture computer runs `listen.py` and `shout.py` as systemd services so they start automatically when the computer boots and restart if they fail.
+
+The service definitions are stored in the `systemd/` directory:
+
+- `systemd/listen-slaughter-measurements.service`
+- `systemd/shout-slaughter-measurements.service`
+
+### Install the Services
+
+From the repository directory:
+
+```sh
+sudo cp systemd/listen-slaughter-measurements.service /etc/systemd/system/
+sudo cp systemd/shout-slaughter-measurements.service /etc/systemd/system/
+
+sudo systemctl daemon-reload
+
+sudo systemctl enable --now listen-slaughter-measurements.service
+sudo systemctl enable --now shout-slaughter-measurements.service
+
+```
+
+### Check Service Status
+
+```sh
+sudo systemctl status listen-slaughter-measurements.service
+sudo systemctl status shout-slaughter-measurements.service
+```
+
+Check whether the services are enabled at boot:
+
+```sh
+sudo systemctl is-enabled listen-slaughter-measurements.service
+sudo systemctl is-enabled shout-slaughter-measurements.service
+```
+
+Both should report `enabled`.
+
+### View Logs
+
+```sh
+sudo journalctl -u listen-slaughter-measurements.service
+sudo journalctl -u shout-slaughter-measurements.service
+```
+
+To show logs from only the current boot:
+
+```sh
+sudo journalctl -u listen-slaughter-measurements.service -b
+sudo journalctl -u shout-slaughter-measurements.service -b
+```
+
+### Restart the Services
+
+```sh
+sudo systemctl restart listen-slaughter-measurements.service
+sudo systemctl restart shout-slaughter-measurements.service
+```
+
+The service files in this repository are the source of truth. If a service configuration is changed, update the repository copy and reinstall it into `/etc/systemd/system/`.

@@ -1,0 +1,15 @@
+[Unit]
+Description=Slaughter Measurement HTTP Server
+Wants=network-online.target
+After=local-fs.target network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/devan/slaughter-measurements/shout.py
+Restart=on-failure
+RestartSec=5
+User=root
+SyslogIdentifier=slaughter-shout
+
+[Install]
+WantedBy=multi-user.target

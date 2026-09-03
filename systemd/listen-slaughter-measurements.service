@@ -1,0 +1,14 @@
+[Unit]
+Description=Slaughter Measurement Listener
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/devan/slaughter-measurements/listen.py
+Restart=on-failure
+RestartSec=5
+User=root
+SyslogIdentifier=slaughter-listen
+
+[Install]
+WantedBy=multi-user.target
