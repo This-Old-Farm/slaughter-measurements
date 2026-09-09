@@ -272,6 +272,9 @@ class Station:
         if not self.go_scanned:
             return
 
+        # Round to the nearest integer
+        weight = round(weight)
+
         order_of_slaughter = get_next_order_of_slaughter(self.name)
 
         db.execute(
@@ -291,7 +294,7 @@ class Station:
         db.commit()
 
         log.info(
-            "%s: CAPTURED: Order %d, %g",
+            "%s: CAPTURED: Order %d, %d",
             self.name,
             order_of_slaughter,
             weight,

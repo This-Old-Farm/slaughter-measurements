@@ -246,7 +246,7 @@ class Handler(BaseHTTPRequestHandler):
                     "id": r["id"],
                     "order_of_slaughter": r["order_of_slaughter"],
                     "station": r["station"],
-                    "weight": r["weight"],
+                    "weight": int(round(r["weight"])),
                     "recorded_at": r["recorded_at"],
                 }
                 for r in rows
@@ -287,7 +287,7 @@ class Handler(BaseHTTPRequestHandler):
             (
                 "<tr>"
                 f"<td>{r['order_of_slaughter']}</td>"
-                f"<td>{r['weight']}</td>"
+                f"<td>{int(round(r['weight']))}</td>"
                 f"<td>{html.escape(str(r['recorded_at']))}</td>"
                 "</tr>"
             )
@@ -298,7 +298,7 @@ class Handler(BaseHTTPRequestHandler):
             (
                 "<tr>"
                 f"<td>{r['order_of_slaughter']}</td>"
-                f"<td>{r['weight']}</td>"
+                f"<td>{int(round(r['weight']))}</td>"
                 f"<td>{html.escape(str(r['recorded_at']))}</td>"
                 "</tr>"
             )
@@ -334,6 +334,19 @@ class Handler(BaseHTTPRequestHandler):
             "text-align:left;"
             "background-color:#f5f5f5;"
             "}"
+
+            ".tables-container{"
+            "display:flex;"
+            "gap:3em;"
+            "flex-wrap:wrap;"
+            "width:100%;"
+            "}"
+
+            ".table-column{"
+            "flex:1;"
+            "min-width:300px;"
+            "max-width:600px;"
+            "}"
             "</style>"
 
             "</head>"
@@ -342,6 +355,9 @@ class Handler(BaseHTTPRequestHandler):
 
             "<h1>Slaughter Measurements</h1>"
 
+            "<div class='tables-container'>"
+
+            "<div class='table-column'>"
             "<h2>Live Station Scans</h2>"
             "<table>"
             "<tr>"
@@ -353,7 +369,9 @@ class Handler(BaseHTTPRequestHandler):
             f"{live_rows_html}"
             "</tbody>"
             "</table>"
+            "</div>"
 
+            "<div class='table-column'>"
             "<h2>Hang Station Scans</h2>"
             "<table>"
             "<tr>"
@@ -365,6 +383,9 @@ class Handler(BaseHTTPRequestHandler):
             f"{hang_rows_html}"
             "</tbody>"
             "</table>"
+            "</div>"
+
+            "</div>"
 
             "<script>"
             "function escapeHtml(unsafe) {"
