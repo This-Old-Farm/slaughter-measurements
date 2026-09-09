@@ -297,7 +297,7 @@ class Handler(BaseHTTPRequestHandler):
 
         hang_rows_html = "".join(
             (
-                f"<tr class=\"{'row-pair-colored' if math.ceil(r['order_of_slaughter'] / 2) % 2 != 0 else ''}\">"
+                f"<tr class=\"{'row-pair-colored' if math.ceil(r['order_of_slaughter'] / 2) % 2 == 0 else ''}\">"
                 f"<td>{r['order_of_slaughter']}</td>"
                 f"<td>{int(round(r['weight']))}</td>"
                 f"<td>{html.escape(str(r['recorded_at']))}</td>"
@@ -421,15 +421,15 @@ class Handler(BaseHTTPRequestHandler):
             "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${escapeHtml(r.recorded_at)}</td>`;"
             "                liveTableBody.appendChild(row);"
             "            });"
-            "            hangRows.forEach(r => {"
-            "                const row = document.createElement('tr');"
-            "                const group = Math.ceil(r.order_of_slaughter / 2);"
-            "                if (group % 2 !== 0) {"
-            "                    row.className = 'row-pair-colored';"
-            "                }"
-            "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${escapeHtml(r.recorded_at)}</td>`;"
-            "                hangTableBody.appendChild(row);"
-            "            });"
+            hangRows.forEach(r => {
+                const row = document.createElement('tr');
+                const group = Math.ceil(r.order_of_slaughter / 2);
+                if (group % 2 === 0) {
+                    row.className = 'row-pair-colored';
+                }
+                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${escapeHtml(r.recorded_at)}</td>`;
+                hangTableBody.appendChild(row);
+            });
             "        })"
             "        .catch(error => console.error('Error fetching measurements:', error));"
             "}"
