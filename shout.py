@@ -333,7 +333,9 @@ class Handler(BaseHTTPRequestHandler):
 
             "th{"
             "text-align:left;"
-            "background-color:#f5f5f5;"
+            "background-color:#343a40;"
+            "color:#ffffff;"
+            "border-bottom:3px solid #1a1a1a;"
             "}"
 
             ".tables-container{"
