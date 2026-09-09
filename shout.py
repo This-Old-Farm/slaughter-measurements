@@ -26,6 +26,7 @@ import html
 import json
 import os
 import sqlite3
+import datetime
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -171,6 +172,28 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # ====================================================
+        # HTML display page (today's scans)
+        # ====================================================
+
+        if parsed.path == "/display":
+
+            now = datetime.datetime.now()
+            midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            seconds_since_midnight = (now - midnight).total_seconds()
+
+            rows = fetch_recent(
+                seconds_since_midnight
+            )
+
+            self._send(
+                200,
+                self.render_html(rows),
+                "text/html; charset=utf-8",
+            )
+
+            return
+
+        # ====================================================
         # JSON API
         # ====================================================
 
@@ -180,34 +203,39 @@ class Handler(BaseHTTPRequestHandler):
                 parsed.query
             )
 
-            seconds = qs.get(
-                "seconds",
-                [str(DEFAULT_SECONDS)],
-            )[0]
+            if qs.get("today"):
+                now = datetime.datetime.now()
+                midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                seconds_int = (now - midnight).total_seconds()
+            else:
+                seconds = qs.get(
+                    "seconds",
+                    [str(DEFAULT_SECONDS)],
+                )[0]
 
-            try:
+                try:
 
-                seconds_int = int(
-                    seconds
-                )
+                    seconds_int = int(
+                        seconds
+                    )
 
-                if seconds_int < 0:
-                    raise ValueError
+                    if seconds_int < 0:
+                        raise ValueError
 
-            except (TypeError, ValueError):
+                except (TypeError, ValueError):
 
-                self._send(
-                    400,
-                    json.dumps(
-                        {
-                            "error":
-                            "seconds must be a non-negative integer"
-                        }
-                    ),
-                    "application/json",
-                )
+                    self._send(
+                        400,
+                        json.dumps(
+                            {
+                                "error":
+                                "seconds must be a non-negative integer"
+                            }
+                        ),
+                        "application/json",
+                    )
 
-                return
+                    return
 
             rows = fetch_recent(
                 seconds_int
@@ -321,7 +349,9 @@ class Handler(BaseHTTPRequestHandler):
             "<th>Weight</th>"
             "<th>Recorded At</th>"
             "</tr>"
+            "<tbody id='live-table-body'>"
             f"{live_rows_html}"
+            "</tbody>"
             "</table>"
 
             "<h2>Hang Station Scans</h2>"
@@ -331,8 +361,48 @@ class Handler(BaseHTTPRequestHandler):
             "<th>Weight</th>"
             "<th>Recorded At</th>"
             "</tr>"
+            "<tbody id='hang-table-body'>"
             f"{hang_rows_html}"
+            "</tbody>"
             "</table>"
+
+            "<script>"
+            "function escapeHtml(unsafe) {"
+            "    return unsafe"
+            "         .replace(/&/g, '&amp;')"
+            "         .replace(/</g, '&lt;')"
+            "         .replace(/>/g, '&gt;')"
+            "         .replace(/\"/g, '&quot;')"
+            "         .replace(/'/g, '&#039;');"
+            "}"
+
+            "function updateTables() {"
+            "    const url = window.location.pathname === '/display' ? '/get?today=true' : '/get';"
+            "    fetch(url)"
+            "        .then(response => response.json())"
+            "        .then(data => {"
+            "            const liveTableBody = document.getElementById('live-table-body');"
+            "            const hangTableBody = document.getElementById('hang-table-body');"
+            "            liveTableBody.innerHTML = '';"
+            "            hangTableBody.innerHTML = '';"
+            "            const liveRows = data.filter(r => r.station === 'live');"
+            "            const hangRows = data.filter(r => r.station === 'hang');"
+            "            liveRows.forEach(r => {"
+            "                const row = document.createElement('tr');"
+            "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${escapeHtml(r.recorded_at)}</td>`;"
+            "                liveTableBody.appendChild(row);"
+            "            });"
+            "            hangRows.forEach(r => {"
+            "                const row = document.createElement('tr');"
+            "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${escapeHtml(r.recorded_at)}</td>`;"
+            "                hangTableBody.appendChild(row);"
+            "            });"
+            "        })"
+            "        .catch(error => console.error('Error fetching measurements:', error));"
+            "}"
+
+            "setInterval(updateTables, 2000);"
+            "</script>"
 
             "</body>"
             "</html>"
