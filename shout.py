@@ -65,7 +65,7 @@ db_init.execute(
     """
     CREATE TABLE IF NOT EXISTS measurements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        animal_id TEXT NOT NULL,
+        order_of_slaughter INTEGER NOT NULL,
         station TEXT NOT NULL,
         weight REAL NOT NULL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -89,7 +89,7 @@ def fetch_recent(seconds):
 
     rows = conn.execute(
         """
-        SELECT id, animal_id, station, weight, recorded_at
+        SELECT id, order_of_slaughter, station, weight, recorded_at
         FROM measurements
         WHERE recorded_at >= datetime('now', ?)
         ORDER BY recorded_at DESC, id DESC
@@ -216,7 +216,7 @@ class Handler(BaseHTTPRequestHandler):
             payload = [
                 {
                     "id": r["id"],
-                    "animal_id": r["animal_id"],
+                    "order_of_slaughter": r["order_of_slaughter"],
                     "station": r["station"],
                     "weight": r["weight"],
                     "recorded_at": r["recorded_at"],
@@ -252,17 +252,29 @@ class Handler(BaseHTTPRequestHandler):
     @staticmethod
     def render_html(rows):
 
-        rows_html = "".join(
+        live_rows = [r for r in rows if r['station'] == 'live']
+        hang_rows = [r for r in rows if r['station'] == 'hang']
+
+        live_rows_html = "".join(
             (
                 "<tr>"
-                f"<td>{r['id']}</td>"
-                f"<td>{html.escape(str(r['animal_id']))}</td>"
-                f"<td>{html.escape(str(r['station']))}</td>"
+                f"<td>{r['order_of_slaughter']}</td>"
                 f"<td>{r['weight']}</td>"
                 f"<td>{html.escape(str(r['recorded_at']))}</td>"
                 "</tr>"
             )
-            for r in rows
+            for r in live_rows
+        )
+
+        hang_rows_html = "".join(
+            (
+                "<tr>"
+                f"<td>{r['order_of_slaughter']}</td>"
+                f"<td>{r['weight']}</td>"
+                f"<td>{html.escape(str(r['recorded_at']))}</td>"
+                "</tr>"
+            )
+            for r in hang_rows
         )
 
         return (
@@ -280,6 +292,9 @@ class Handler(BaseHTTPRequestHandler):
 
             "table{"
             "border-collapse:collapse;"
+            "margin-bottom:2em;"
+            "width:100%;"
+            "max-width:600px;"
             "}"
 
             "th,td{"
@@ -289,6 +304,7 @@ class Handler(BaseHTTPRequestHandler):
 
             "th{"
             "text-align:left;"
+            "background-color:#f5f5f5;"
             "}"
             "</style>"
 
@@ -298,18 +314,24 @@ class Handler(BaseHTTPRequestHandler):
 
             "<h1>Slaughter Measurements</h1>"
 
+            "<h2>Live Station Scans</h2>"
             "<table>"
-
             "<tr>"
-            "<th>ID</th>"
-            "<th>Animal</th>"
-            "<th>Station</th>"
+            "<th>Order</th>"
             "<th>Weight</th>"
             "<th>Recorded At</th>"
             "</tr>"
+            f"{live_rows_html}"
+            "</table>"
 
-            f"{rows_html}"
-
+            "<h2>Hang Station Scans</h2>"
+            "<table>"
+            "<tr>"
+            "<th>Order</th>"
+            "<th>Weight</th>"
+            "<th>Recorded At</th>"
+            "</tr>"
+            f"{hang_rows_html}"
             "</table>"
 
             "</body>"

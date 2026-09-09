@@ -65,7 +65,7 @@ db.execute(
     """
     CREATE TABLE IF NOT EXISTS measurements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        animal_id TEXT NOT NULL,
+        order_of_slaughter INTEGER NOT NULL,
         station TEXT NOT NULL,
         weight REAL NOT NULL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -75,6 +75,24 @@ db.execute(
 
 db.commit()
 
+
+def get_next_order_of_slaughter(station_name):
+    """
+    Get the next order number for a given station for the current day.
+    """
+    cursor = db.cursor()
+    cursor.execute(
+        """
+        SELECT MAX(order_of_slaughter)
+        FROM measurements
+        WHERE station = ? AND DATE(recorded_at) = DATE('now', 'localtime')
+        """,
+        (station_name.lower(),),
+    )
+    max_order = cursor.fetchone()[0]
+    if max_order is None:
+        return 1
+    return max_order + 1
 
 # ============================================================
 # Barcode character mapping
@@ -143,7 +161,7 @@ class Station:
 
         # Each station gets its own independent state.
         self.barcode_buffer = ""
-        self.animal_id = None
+        self.go_scanned = False
 
         # ----------------------------------------------------
         # Scanner
@@ -189,7 +207,7 @@ class Station:
         )
 
         log.info(
-            "%s: READY - Scan an animal.",
+            "%s: READY - Scan 'GO' to capture weight.",
             self.name,
         )
 
@@ -217,24 +235,21 @@ class Station:
 
             if key == "KEY_ENTER":
 
-                if self.barcode_buffer:
-
-                    self.animal_id = (
-                        self.barcode_buffer
-                    )
+                if self.barcode_buffer == "GO":
 
                     log.info(
                         "%s: SCANNED: %s",
                         self.name,
-                        self.animal_id,
+                        self.barcode_buffer,
                     )
 
                     log.info(
                         "%s: Waiting for weight...",
                         self.name,
                     )
-
-                    self.barcode_buffer = ""
+                    self.go_scanned = True
+                
+                self.barcode_buffer = ""
 
                 continue
 
@@ -254,18 +269,20 @@ class Station:
 
     def save_measurement(self, weight):
 
-        if self.animal_id is None:
+        if not self.go_scanned:
             return
+
+        order_of_slaughter = get_next_order_of_slaughter(self.name)
 
         db.execute(
             """
             INSERT INTO measurements
-                (animal_id, station, weight)
+                (order_of_slaughter, station, weight)
             VALUES
                 (?, ?, ?)
             """,
             (
-                self.animal_id,
+                order_of_slaughter,
                 self.name.lower(),
                 weight,
             ),
@@ -274,18 +291,18 @@ class Station:
         db.commit()
 
         log.info(
-            "%s: CAPTURED: %s,%g",
+            "%s: CAPTURED: Order %d, %g",
             self.name,
-            self.animal_id,
+            order_of_slaughter,
             weight,
         )
 
         # Require another barcode before another
         # weight can be accepted.
-        self.animal_id = None
+        self.go_scanned = False
 
         log.info(
-            "%s: READY - Scan next animal.",
+            "%s: READY - Scan 'GO' to capture weight.",
             self.name,
         )
 
@@ -366,7 +383,7 @@ class HangStation(Station):
         # been scanned. After a successful capture,
         # save_measurement() clears the animal ID, so the
         # continuing stream cannot create duplicate records.
-        if self.animal_id is None:
+        if not self.go_scanned:
             return
 
         self.save_measurement(weight)
@@ -415,6 +432,7 @@ class HangStation(Station):
         For the HANG station, only a VALID, GROSS,
         POUNDS reading is accepted.
         """
+
 
         # ----------------------------------------------------
         # Decode ASCII
