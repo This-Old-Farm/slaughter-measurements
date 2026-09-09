@@ -83,23 +83,31 @@ db_init.close()
 # Database queries
 # ============================================================
 
-def fetch_recent(seconds):
+def fetch_recent(seconds=None, date=None):
 
     conn = sqlite3.connect(DB_PATH)
 
     conn.row_factory = sqlite3.Row
 
-    rows = conn.execute(
+    if date:
+        query = """
+            SELECT id, order_of_slaughter, station, weight, recorded_at
+            FROM measurements
+            WHERE DATE(recorded_at) = ?
+            ORDER BY recorded_at DESC, id DESC
         """
-        SELECT id, order_of_slaughter, station, weight, recorded_at
-        FROM measurements
-        WHERE recorded_at >= datetime('now', ?)
-        ORDER BY recorded_at DESC, id DESC
-        """,
-        (
-            f"-{int(seconds)} seconds",
-        ),
-    ).fetchall()
+        params = (date,)
+    else:
+        query = """
+            SELECT id, order_of_slaughter, station, weight, recorded_at
+            FROM measurements
+            WHERE recorded_at >= datetime('now', ?)
+            ORDER BY recorded_at DESC, id DESC
+        """
+        params = (f"-{int(seconds)} seconds",)
+
+
+    rows = conn.execute(query, params).fetchall()
 
     conn.close()
 
@@ -153,6 +161,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
 
         parsed = urlparse(self.path)
+        qs = parse_qs(parsed.query)
 
         # ====================================================
         # HTML test page
@@ -161,12 +170,12 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/test":
 
             rows = fetch_recent(
-                DEFAULT_SECONDS
+                seconds=DEFAULT_SECONDS
             )
 
             self._send(
                 200,
-                self.render_html(rows),
+                self.render_html(rows, page='test'),
                 "text/html; charset=utf-8",
             )
 
@@ -183,31 +192,50 @@ class Handler(BaseHTTPRequestHandler):
             seconds_since_midnight = (now - midnight).total_seconds()
 
             rows = fetch_recent(
-                seconds_since_midnight
+                seconds=seconds_since_midnight
             )
 
             self._send(
                 200,
-                self.render_html(rows),
+                self.render_html(rows, page='display'),
                 "text/html; charset=utf-8",
             )
 
             return
 
         # ====================================================
+        # HTML report page
+        # ====================================================
+
+        if parsed.path == "/report":
+            
+            today_str = datetime.date.today().isoformat()
+            
+            rows = fetch_recent(
+                date=today_str
+            )
+
+            self._send(
+                200,
+                self.render_html(rows, page='report'),
+                "text/html; charset=utf-8",
+            )
+
+            return
+            
+        # ====================================================
         # JSON API
         # ====================================================
 
         if parsed.path == "/get":
 
-            qs = parse_qs(
-                parsed.query
-            )
-
-            if qs.get("today"):
+            if date_str := qs.get("date", [None])[0]:
+                 rows = fetch_recent(date=date_str)
+            elif qs.get("today"):
                 now = datetime.datetime.now()
                 midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
                 seconds_int = (now - midnight).total_seconds()
+                rows = fetch_recent(seconds=seconds_int)
             else:
                 seconds = qs.get(
                     "seconds",
@@ -238,9 +266,9 @@ class Handler(BaseHTTPRequestHandler):
 
                     return
 
-            rows = fetch_recent(
-                seconds_int
-            )
+                rows = fetch_recent(
+                    seconds=seconds_int
+                )
 
             payload = [
                 {
@@ -279,7 +307,7 @@ class Handler(BaseHTTPRequestHandler):
     # --------------------------------------------------------
 
     @staticmethod
-    def render_html(rows):
+    def render_html(rows, page='test'):
 
         live_rows = [r for r in rows if r['station'] == 'live']
         hang_rows = [r for r in rows if r['station'] == 'hang']
@@ -306,12 +334,23 @@ class Handler(BaseHTTPRequestHandler):
             for r in hang_rows
         )
 
+        report_controls_html = ""
+        if page == 'report':
+            report_controls_html = """
+                <div class="controls">
+                    <label for="report-date">Select Date:</label>
+                    <input type="date" id="report-date">
+                    <button id="export-btn">Export to Excel</button>
+                </div>
+            """
+
         return (
             "<!doctype html>"
             "<html>"
             "<head>"
             "<meta charset='utf-8'>"
             "<title>Slaughter Measurements</title>"
+            "<script src=\"https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js\"></script>"
 
             "<style>"
             "body{"
@@ -323,7 +362,6 @@ class Handler(BaseHTTPRequestHandler):
             "border-collapse:collapse;"
             "margin-bottom:2em;"
             "width:100%;"
-            "max-width:600px;"
             "}"
 
             "th,td{"
@@ -354,6 +392,13 @@ class Handler(BaseHTTPRequestHandler):
             ".even-row, .row-pair-colored {"
             "background-color: #f9f9f9;"
             "}"
+
+            ".controls {"
+            "margin-bottom: 2em;"
+            "display: flex;"
+            "gap: 1em;"
+            "align-items: center;"
+            "}"
             "</style>"
 
             "</head>"
@@ -361,6 +406,8 @@ class Handler(BaseHTTPRequestHandler):
             "<body>"
 
             "<h1>Slaughter Measurements</h1>"
+            
+            f"{report_controls_html}"
 
             "<div class='tables-container'>"
 
@@ -404,9 +451,8 @@ class Handler(BaseHTTPRequestHandler):
             "         .replace(/'/g, '&#039;');"
             "}"
 
-            "function updateTables() {"
-            "    const url = window.location.pathname === '/display' ? '/get?today=true' : '/get';"
-            "    fetch(url)"
+            "function updateTables(url) {"
+            "    return fetch(url)"
             "        .then(response => response.json())"
             "        .then(data => {"
             "            const liveTableBody = document.getElementById('live-table-body');"
@@ -432,11 +478,46 @@ class Handler(BaseHTTPRequestHandler):
             "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${escapeHtml(r.recorded_at)}</td>`;"
             "                hangTableBody.appendChild(row);"
             "            });"
+            "            return data;"
             "        })"
             "        .catch(error => console.error('Error fetching measurements:', error));"
             "}"
+            
+            "const page = '" + page + "';"
 
-            "setInterval(updateTables, 2000);"
+            "if (page === 'report') {"
+            "    const dateInput = document.getElementById('report-date');"
+            "    const exportBtn = document.getElementById('export-btn');"
+            "    const today = new Date();"
+            "    const yyyy = today.getFullYear();"
+            "    const mm = String(today.getMonth() + 1).padStart(2, '0');"
+            "    const dd = String(today.getDate()).padStart(2, '0');"
+            "    dateInput.value = `${yyyy}-${mm}-${dd}`;"
+            "    dateInput.addEventListener('change', () => {"
+            "        updateTables(`/get?date=${dateInput.value}`);"
+            "    });"
+            "    exportBtn.addEventListener('click', () => {"
+            "        const date = dateInput.value;"
+            "        updateTables(`/get?date=${date}`).then(data => {"
+            "            const liveRows = data.filter(r => r.station === 'live');"
+            "            const hangRows = data.filter(r => r.station === 'hang');"
+            "            const liveSheet = [['Order', 'Weight', 'Recorded At']];"
+            "            liveRows.forEach(r => liveSheet.push([r.order_of_slaughter, r.weight, r.recorded_at]));"
+            "            const hangSheet = [['Order', 'Weight', 'Recorded At']];"
+            "            hangRows.forEach(r => hangSheet.push([r.order_of_slaughter, r.weight, r.recorded_at]));"
+            "            const wb = XLSX.utils.book_new();"
+            "            const wsLive = XLSX.utils.aoa_to_sheet(liveSheet);"
+            "            const wsHang = XLSX.utils.aoa_to_sheet(hangSheet);"
+            "            XLSX.utils.book_append_sheet(wb, wsLive, 'Live Scans');"
+            "            XLSX.utils.book_append_sheet(wb, wsHang, 'Hang Scans');"
+            "            XLSX.writeFile(wb, `slaughter_report_${date}.xlsx`);"
+            "        });"
+            "    });"
+            "} else {"
+            "    const initialUrl = page === 'display' ? '/get?today=true' : '/get';"
+            "    setInterval(() => updateTables(initialUrl), 2000);"
+            "}"
+
             "</script>"
 
             "</body>"
