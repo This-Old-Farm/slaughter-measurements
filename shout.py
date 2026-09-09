@@ -347,6 +347,15 @@ class Handler(BaseHTTPRequestHandler):
             "min-width:300px;"
             "max-width:600px;"
             "}"
+
+            "#hang-table-body tr:nth-child(4n+1),"
+            "#hang-table-body tr:nth-child(4n+2) {"
+            "background-color: #f9f9f9;"
+            "}"
+
+            "#live-table-body tr:nth-child(even) {"
+            "background-color: #f9f9f9;"
+            "}"
             "</style>"
 
             "</head>"
