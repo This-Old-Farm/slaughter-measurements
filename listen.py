@@ -9,7 +9,6 @@ import signal
 import serial
 from evdev import InputDevice, ecodes
 
-
 # ============================================================
 # Configuration
 # ============================================================
@@ -61,8 +60,7 @@ os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 db = sqlite3.connect(DB_PATH)
 
-db.execute(
-    """
+db.execute("""
     CREATE TABLE IF NOT EXISTS measurements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_of_slaughter INTEGER NOT NULL,
@@ -70,8 +68,7 @@ db.execute(
         weight REAL NOT NULL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
-    """
-)
+    """)
 
 db.commit()
 
@@ -94,6 +91,7 @@ def get_next_order_of_slaughter(station_name):
         return 1
     return max_order + 1
 
+
 # ============================================================
 # Barcode character mapping
 # ============================================================
@@ -109,7 +107,6 @@ KEY_MAP = {
     "KEY_7": "7",
     "KEY_8": "8",
     "KEY_9": "9",
-
     "KEY_A": "A",
     "KEY_B": "B",
     "KEY_C": "C",
@@ -136,7 +133,6 @@ KEY_MAP = {
     "KEY_X": "X",
     "KEY_Y": "Y",
     "KEY_Z": "Z",
-
     "KEY_MINUS": "-",
 }
 
@@ -144,6 +140,7 @@ KEY_MAP = {
 # ============================================================
 # Station
 # ============================================================
+
 
 class Station:
 
@@ -167,9 +164,7 @@ class Station:
         # Scanner
         # ----------------------------------------------------
 
-        self.scanner = InputDevice(
-            self.scanner_device
-        )
+        self.scanner = InputDevice(self.scanner_device)
 
         # Prevent scanner keystrokes from being typed
         # into the terminal or other applications.
@@ -211,7 +206,6 @@ class Station:
             self.name,
         )
 
-
     # ========================================================
     # Scanner handling
     # ========================================================
@@ -248,7 +242,7 @@ class Station:
                         self.name,
                     )
                     self.go_scanned = True
-                
+
                 self.barcode_buffer = ""
 
                 continue
@@ -261,7 +255,6 @@ class Station:
 
             if character:
                 self.barcode_buffer += character
-
 
     # ========================================================
     # Save measurement
@@ -309,7 +302,6 @@ class Station:
             self.name,
         )
 
-
     # ========================================================
     # Cleanup
     # ========================================================
@@ -331,6 +323,7 @@ class Station:
 # LIVE station - MSI-8000HD
 # ============================================================
 
+
 class LiveStation(Station):
 
     def handle_scale(self):
@@ -342,9 +335,7 @@ class LiveStation(Station):
 
         try:
 
-            weight_text = (
-                raw.decode("ascii").strip()
-            )
+            weight_text = raw.decode("ascii").strip()
 
             weight = float(weight_text)
 
@@ -365,6 +356,7 @@ class LiveStation(Station):
 # ============================================================
 # HANG station - IQ355+
 # ============================================================
+
 
 class HangStation(Station):
 
@@ -391,13 +383,11 @@ class HangStation(Station):
 
         self.save_measurement(weight)
 
-
     # ========================================================
     # IQ355+ continuous-stream parser
     # ========================================================
 
     def parse_iq355(self, raw):
-
         """
         IQ355+ continuous output format:
 
@@ -436,7 +426,6 @@ class HangStation(Station):
         POUNDS reading is accepted.
         """
 
-
         # ----------------------------------------------------
         # Decode ASCII
         # ----------------------------------------------------
@@ -455,7 +444,6 @@ class HangStation(Station):
 
             return None
 
-
         # ----------------------------------------------------
         # Remove ONLY CR/LF.
         #
@@ -466,7 +454,6 @@ class HangStation(Station):
         # ----------------------------------------------------
 
         message = message.rstrip("\r\n")
-
 
         # ----------------------------------------------------
         # Verify STX
@@ -485,13 +472,11 @@ class HangStation(Station):
 
             return None
 
-
         # ----------------------------------------------------
         # Remove STX
         # ----------------------------------------------------
 
         data = message[1:]
-
 
         # ----------------------------------------------------
         # Expected fixed-width payload:
@@ -508,15 +493,13 @@ class HangStation(Station):
         if len(data) != 11:
 
             log.debug(
-                "%s: IQ355+ unexpected packet "
-                "length %d: %r",
+                "%s: IQ355+ unexpected packet " "length %d: %r",
                 self.name,
                 len(data),
                 raw,
             )
 
             return None
-
 
         # ----------------------------------------------------
         # Split fields
@@ -531,7 +514,6 @@ class HangStation(Station):
         gross_net = data[9]
 
         status = data[10]
-
 
         # ----------------------------------------------------
         # Polarity
@@ -573,7 +555,6 @@ class HangStation(Station):
 
             return None
 
-
         # ----------------------------------------------------
         # Status
         # ----------------------------------------------------
@@ -593,8 +574,7 @@ class HangStation(Station):
         if status == "O":
 
             log.warning(
-                "%s: IQ355+ reports "
-                "over/under range.",
+                "%s: IQ355+ reports " "over/under range.",
                 self.name,
             )
 
@@ -610,7 +590,6 @@ class HangStation(Station):
 
             return None
 
-
         # ----------------------------------------------------
         # Units
         # ----------------------------------------------------
@@ -618,14 +597,12 @@ class HangStation(Station):
         if unit != "L":
 
             log.warning(
-                "%s: IQ355+ ignored reading "
-                "because unit is %r, not pounds.",
+                "%s: IQ355+ ignored reading " "because unit is %r, not pounds.",
                 self.name,
                 unit,
             )
 
             return None
-
 
         # ----------------------------------------------------
         # Gross / Net
@@ -634,14 +611,12 @@ class HangStation(Station):
         if gross_net != "G":
 
             log.warning(
-                "%s: IQ355+ ignored reading "
-                "because mode is %r, not gross.",
+                "%s: IQ355+ ignored reading " "because mode is %r, not gross.",
                 self.name,
                 gross_net,
             )
 
             return None
-
 
         # ----------------------------------------------------
         # Weight
@@ -649,25 +624,20 @@ class HangStation(Station):
 
         try:
 
-            weight = float(
-                weight_text.strip()
-            )
+            weight = float(weight_text.strip())
 
         except ValueError:
 
             log.warning(
-                "%s: IQ355+ invalid weight "
-                "field: %r",
+                "%s: IQ355+ invalid weight " "field: %r",
                 self.name,
                 weight_text,
             )
 
             return None
 
-
         if negative:
             weight = -weight
-
 
         # ----------------------------------------------------
         # Valid hanging weight
@@ -679,6 +649,7 @@ class HangStation(Station):
 # ============================================================
 # Signal handling
 # ============================================================
+
 
 def handle_shutdown_signal(signum, frame):
     """
@@ -693,6 +664,7 @@ def handle_shutdown_signal(signum, frame):
     )
 
     raise KeyboardInterrupt
+
 
 signal.signal(
     signal.SIGTERM,
@@ -713,9 +685,7 @@ hang = None
 
 try:
 
-    log.info(
-        "Starting slaughter measurement capture..."
-    )
+    log.info("Starting slaughter measurement capture...")
 
     # --------------------------------------------------------
     # LIVE station
@@ -744,7 +714,6 @@ try:
         hang,
     ]
 
-
     # ========================================================
     # Main loop
     # ========================================================
@@ -757,13 +726,9 @@ try:
 
         for station in stations:
 
-            inputs.append(
-                station.scanner.fd
-            )
+            inputs.append(station.scanner.fd)
 
-            inputs.append(
-                station.scale.fileno()
-            )
+            inputs.append(station.scale.fileno())
 
         readable, _, _ = select.select(
             inputs,
@@ -771,7 +736,6 @@ try:
             [],
             1,
         )
-
 
         # ----------------------------------------------------
         # Determine which station/device has data
@@ -794,9 +758,7 @@ try:
 
 except KeyboardInterrupt:
 
-    log.info(
-        "Stopping slaughter measurement capture..."
-    )
+    log.info("Stopping slaughter measurement capture...")
 
 
 finally:
@@ -809,6 +771,4 @@ finally:
 
     db.close()
 
-    log.info(
-        "Slaughter measurement capture stopped."
-    )
+    log.info("Slaughter measurement capture stopped.")
