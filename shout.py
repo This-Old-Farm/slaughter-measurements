@@ -27,6 +27,7 @@ import json
 import os
 import sqlite3
 import datetime
+import math
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -285,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
 
         live_rows_html = "".join(
             (
-                "<tr>"
+                f"<tr class=\"{'even-row' if r['order_of_slaughter'] % 2 == 0 else ''}\">"
                 f"<td>{r['order_of_slaughter']}</td>"
                 f"<td>{int(round(r['weight']))}</td>"
                 f"<td>{html.escape(str(r['recorded_at']))}</td>"
@@ -296,7 +297,7 @@ class Handler(BaseHTTPRequestHandler):
 
         hang_rows_html = "".join(
             (
-                "<tr>"
+                f"<tr class=\"{'row-pair-colored' if math.ceil(r['order_of_slaughter'] / 2) % 2 != 0 else ''}\">"
                 f"<td>{r['order_of_slaughter']}</td>"
                 f"<td>{int(round(r['weight']))}</td>"
                 f"<td>{html.escape(str(r['recorded_at']))}</td>"
@@ -348,12 +349,7 @@ class Handler(BaseHTTPRequestHandler):
             "max-width:600px;"
             "}"
 
-            "#hang-table-body tr:nth-child(4n+1),"
-            "#hang-table-body tr:nth-child(4n+2) {"
-            "background-color: #f9f9f9;"
-            "}"
-
-            "#live-table-body tr:nth-child(even) {"
+            ".even-row, .row-pair-colored {"
             "background-color: #f9f9f9;"
             "}"
             "</style>"
@@ -419,11 +415,18 @@ class Handler(BaseHTTPRequestHandler):
             "            const hangRows = data.filter(r => r.station === 'hang');"
             "            liveRows.forEach(r => {"
             "                const row = document.createElement('tr');"
+            "                if (r.order_of_slaughter % 2 === 0) {"
+            "                    row.className = 'even-row';"
+            "                }"
             "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${escapeHtml(r.recorded_at)}</td>`;"
             "                liveTableBody.appendChild(row);"
             "            });"
             "            hangRows.forEach(r => {"
             "                const row = document.createElement('tr');"
+            "                const group = Math.ceil(r.order_of_slaughter / 2);"
+            "                if (group % 2 !== 0) {"
+            "                    row.className = 'row-pair-colored';"
+            "                }"
             "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${escapeHtml(r.recorded_at)}</td>`;"
             "                hangTableBody.appendChild(row);"
             "            });"
