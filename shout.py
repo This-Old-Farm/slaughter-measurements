@@ -111,8 +111,6 @@ def fetch_recent(seconds):
 class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
-        # Keep normal HTTP request logging quiet.
-        # listen.py already logs measurement captures.
         pass
 
     # --------------------------------------------------------
