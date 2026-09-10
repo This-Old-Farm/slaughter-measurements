@@ -12,6 +12,15 @@ Endpoints:
         N defaults to 43200 seconds (12 hours)
         and must be a non-negative integer.
 
+    GET /measurements[?since_id=N][&limit=N]
+        JSON array of measurements with id > since_id, ordered by
+        id ascending. Lets a consumer resume from the last id it
+        stored instead of guessing a time window.
+
+        since_id defaults to 0 and must be a non-negative integer.
+        limit defaults to 500, must be a non-negative integer,
+        and is clamped to 5000.
+
 Environment:
     DB_PATH
         SQLite database.
@@ -48,6 +57,11 @@ PORT = int(
 )
 
 DEFAULT_SECONDS = 43200
+
+DEFAULT_SINCE_ID = 0
+
+DEFAULT_LIMIT = 500
+MAX_LIMIT = 5000
 
 
 # ============================================================
@@ -96,6 +110,31 @@ def fetch_recent(seconds):
         """,
         (
             f"-{int(seconds)} seconds",
+        ),
+    ).fetchall()
+
+    conn.close()
+
+    return rows
+
+
+def fetch_since(since_id, limit):
+
+    conn = sqlite3.connect(DB_PATH)
+
+    conn.row_factory = sqlite3.Row
+
+    rows = conn.execute(
+        """
+        SELECT id, scan_code, station, weight, recorded_at
+        FROM measurements
+        WHERE id > ?
+        ORDER BY id ASC
+        LIMIT ?
+        """,
+        (
+            since_id,
+            limit,
         ),
     ).fetchall()
 
@@ -211,6 +250,106 @@ class Handler(BaseHTTPRequestHandler):
 
             rows = fetch_recent(
                 seconds_int
+            )
+
+            payload = [
+                {
+                    "id": r["id"],
+                    "scan_code": r["scan_code"],
+                    "station": r["station"],
+                    "weight": r["weight"],
+                    "recorded_at": r["recorded_at"],
+                }
+                for r in rows
+            ]
+
+            self._send(
+                200,
+                json.dumps(
+                    payload,
+                    indent=2,
+                ),
+                "application/json",
+            )
+
+            return
+
+        # ====================================================
+        # Cursor-based JSON API
+        # ====================================================
+
+        if parsed.path == "/measurements":
+
+            qs = parse_qs(
+                parsed.query
+            )
+
+            since_id = qs.get(
+                "since_id",
+                [str(DEFAULT_SINCE_ID)],
+            )[0]
+
+            limit = qs.get(
+                "limit",
+                [str(DEFAULT_LIMIT)],
+            )[0]
+
+            try:
+
+                since_id_int = int(
+                    since_id
+                )
+
+                if since_id_int < 0:
+                    raise ValueError
+
+            except (TypeError, ValueError):
+
+                self._send(
+                    400,
+                    json.dumps(
+                        {
+                            "error":
+                            "since_id must be a non-negative integer"
+                        }
+                    ),
+                    "application/json",
+                )
+
+                return
+
+            try:
+
+                limit_int = int(
+                    limit
+                )
+
+                if limit_int < 0:
+                    raise ValueError
+
+            except (TypeError, ValueError):
+
+                self._send(
+                    400,
+                    json.dumps(
+                        {
+                            "error":
+                            "limit must be a non-negative integer"
+                        }
+                    ),
+                    "application/json",
+                )
+
+                return
+
+            limit_int = min(
+                limit_int,
+                MAX_LIMIT,
+            )
+
+            rows = fetch_since(
+                since_id_int,
+                limit_int,
             )
 
             payload = [
