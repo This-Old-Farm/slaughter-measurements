@@ -659,11 +659,11 @@ class HangStation(Station):
 # Signal handling
 # ============================================================
 
+class Shutdown(Exception):
+    """Raised to unwind to the cleanup block on SIGTERM/SIGINT."""
+
+
 def handle_shutdown_signal(signum, frame):
-    """
-    Convert SIGTERM/SIGINT into a normal Python interruption
-    so execution reaches the existing finally cleanup block.
-    """
     signal_name = signal.Signals(signum).name
 
     log.info(
@@ -671,7 +671,7 @@ def handle_shutdown_signal(signum, frame):
         signal_name,
     )
 
-    raise KeyboardInterrupt
+    raise Shutdown
 
 signal.signal(
     signal.SIGTERM,
@@ -771,7 +771,7 @@ try:
 # Shutdown
 # ============================================================
 
-except KeyboardInterrupt:
+except (KeyboardInterrupt, Shutdown):
 
     log.info(
         "Stopping slaughter measurement capture..."
