@@ -338,7 +338,6 @@ class LiveStation(Station):
 
             return
 
-        # Keep the original LIVE behavior.
         self.save_measurement(weight)
 
 
