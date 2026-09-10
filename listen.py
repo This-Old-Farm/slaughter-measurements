@@ -3,12 +3,11 @@
 import logging
 import os
 import select
-import sqlite3
 import signal
+import sqlite3
 
 import serial
 from evdev import InputDevice, ecodes
-
 
 # ============================================================
 # Configuration
