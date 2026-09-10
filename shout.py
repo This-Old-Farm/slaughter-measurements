@@ -65,7 +65,7 @@ db_init.execute(
     """
     CREATE TABLE IF NOT EXISTS measurements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        animal_id TEXT NOT NULL,
+        scan_code TEXT NOT NULL,
         station TEXT NOT NULL,
         weight REAL NOT NULL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -89,7 +89,7 @@ def fetch_recent(seconds):
 
     rows = conn.execute(
         """
-        SELECT id, animal_id, station, weight, recorded_at
+        SELECT id, scan_code, station, weight, recorded_at
         FROM measurements
         WHERE recorded_at >= datetime('now', ?)
         ORDER BY recorded_at DESC, id DESC
@@ -216,7 +216,7 @@ class Handler(BaseHTTPRequestHandler):
             payload = [
                 {
                     "id": r["id"],
-                    "animal_id": r["animal_id"],
+                    "scan_code": r["scan_code"],
                     "station": r["station"],
                     "weight": r["weight"],
                     "recorded_at": r["recorded_at"],
@@ -256,7 +256,7 @@ class Handler(BaseHTTPRequestHandler):
             (
                 "<tr>"
                 f"<td>{r['id']}</td>"
-                f"<td>{html.escape(str(r['animal_id']))}</td>"
+                f"<td>{html.escape(str(r['scan_code']))}</td>"
                 f"<td>{html.escape(str(r['station']))}</td>"
                 f"<td>{r['weight']}</td>"
                 f"<td>{html.escape(str(r['recorded_at']))}</td>"
@@ -302,7 +302,7 @@ class Handler(BaseHTTPRequestHandler):
 
             "<tr>"
             "<th>ID</th>"
-            "<th>Animal</th>"
+            "<th>Scan Code</th>"
             "<th>Station</th>"
             "<th>Weight</th>"
             "<th>Recorded At</th>"

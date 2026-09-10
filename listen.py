@@ -65,7 +65,7 @@ db.execute(
     """
     CREATE TABLE IF NOT EXISTS measurements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        animal_id TEXT NOT NULL,
+        scan_code TEXT NOT NULL,
         station TEXT NOT NULL,
         weight REAL NOT NULL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -129,6 +129,9 @@ KEY_MAP = {
 
 class Station:
 
+    SCAN_PROMPT = "Scan an animal."
+    NEXT_SCAN_PROMPT = "Scan next animal."
+
     def __init__(
         self,
         name,
@@ -143,7 +146,7 @@ class Station:
 
         # Each station gets its own independent state.
         self.barcode_buffer = ""
-        self.animal_id = None
+        self.scan_code = None
 
         # ----------------------------------------------------
         # Scanner
@@ -189,8 +192,9 @@ class Station:
         )
 
         log.info(
-            "%s: READY - Scan an animal.",
+            "%s: READY - %s",
             self.name,
+            self.SCAN_PROMPT,
         )
 
 
@@ -219,14 +223,14 @@ class Station:
 
                 if self.barcode_buffer:
 
-                    self.animal_id = (
+                    self.scan_code = (
                         self.barcode_buffer
                     )
 
                     log.info(
                         "%s: SCANNED: %s",
                         self.name,
-                        self.animal_id,
+                        self.scan_code,
                     )
 
                     log.info(
@@ -254,18 +258,18 @@ class Station:
 
     def save_measurement(self, weight):
 
-        if self.animal_id is None:
+        if self.scan_code is None:
             return
 
         db.execute(
             """
             INSERT INTO measurements
-                (animal_id, station, weight)
+                (scan_code, station, weight)
             VALUES
                 (?, ?, ?)
             """,
             (
-                self.animal_id,
+                self.scan_code,
                 self.name.lower(),
                 weight,
             ),
@@ -276,17 +280,18 @@ class Station:
         log.info(
             "%s: CAPTURED: %s,%g",
             self.name,
-            self.animal_id,
+            self.scan_code,
             weight,
         )
 
         # Require another barcode before another
         # weight can be accepted.
-        self.animal_id = None
+        self.scan_code = None
 
         log.info(
-            "%s: READY - Scan next animal.",
+            "%s: READY - %s",
             self.name,
+            self.NEXT_SCAN_PROMPT,
         )
 
 
@@ -348,6 +353,9 @@ class LiveStation(Station):
 
 class HangStation(Station):
 
+    SCAN_PROMPT = "Scan a row token."
+    NEXT_SCAN_PROMPT = "Scan next row token."
+
     def handle_scale(self):
 
         raw = self.scale.readline()
@@ -364,9 +372,9 @@ class HangStation(Station):
         #
         # Valid weights are ignored until a barcode has
         # been scanned. After a successful capture,
-        # save_measurement() clears the animal ID, so the
+        # save_measurement() clears the scan code, so the
         # continuing stream cannot create duplicate records.
-        if self.animal_id is None:
+        if self.scan_code is None:
             return
 
         self.save_measurement(weight)
