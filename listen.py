@@ -266,7 +266,7 @@ class Station:
             """,
             (
                 self.animal_id,
-                self.name,
+                self.name.lower(),
                 weight,
             ),
         )
@@ -701,7 +701,7 @@ try:
     # --------------------------------------------------------
 
     live = LiveStation(
-        name="live",
+        name="LIVE",
         scanner_device=LIVE_SCANNER_DEVICE,
         scale_device=LIVE_SCALE_DEVICE,
         scale_timeout=0,
@@ -712,7 +712,7 @@ try:
     # --------------------------------------------------------
 
     hang = HangStation(
-        name="hang",
+        name="HANG",
         scanner_device=HANG_SCANNER_DEVICE,
         scale_device=HANG_SCALE_DEVICE,
         scale_timeout=1,
