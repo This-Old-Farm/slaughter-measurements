@@ -56,10 +56,12 @@ DEFAULT_SECONDS = 43200
 # Database initialization
 # ============================================================
 
-os.makedirs(
-    os.path.dirname(DB_PATH),
-    exist_ok=True,
-)
+db_dir = os.path.dirname(DB_PATH)
+if db_dir:
+    os.makedirs(
+        db_dir,
+        exist_ok=True,
+    )
 
 db_init = sqlite3.connect(DB_PATH)
 
@@ -82,6 +84,34 @@ db_init.close()
 # ============================================================
 # Database queries
 # ============================================================
+
+def get_next_order_of_slaughter(station_name, conn):
+    """
+    Get the next order number for a given station for the current day.
+    """
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT MAX(order_of_slaughter)
+        FROM measurements
+        WHERE station = ? AND DATE(recorded_at) = DATE('now', 'localtime')
+        """,
+        (station_name.lower(),),
+    )
+    max_order = cursor.fetchone()[0]
+    if max_order is None:
+        return 1
+    return max_order + 1
+
+def format_indiana_time(date_obj):
+    """
+    Format a datetime object to Indiana time string.
+    """
+    if not date_obj:
+        return ''
+    # This is a simplistic way to handle timezone, for more complex scenarios
+    # a library like pytz would be better. Assuming the server is in UTC.
+    return (date_obj - datetime.timedelta(hours=5)).strftime('%Y-%m-%d %I:%M:%S %p')
 
 def fetch_recent(seconds=None, date=None):
 
@@ -222,6 +252,83 @@ class Handler(BaseHTTPRequestHandler):
             )
 
             return
+
+        # ====================================================
+        # Test endpoint to clear database
+        # ====================================================
+
+        if parsed.path == "/clear_db":
+            conn = sqlite3.connect(DB_PATH)
+            conn.execute("DELETE FROM measurements")
+            conn.commit()
+            conn.close()
+            self._send(
+                200,
+                "Database cleared.",
+                "text/plain",
+            )
+            return
+
+        # ====================================================
+        # Test endpoint to insert a measurement
+        # ====================================================
+
+        if parsed.path == "/test_insert":
+            station = qs.get("station", [None])[0]
+            weight = qs.get("weight", [None])[0]
+            recorded_at = qs.get("recorded_at", [None])[0]
+
+            if not station or not weight:
+                self._send(
+                    400,
+                    "station and weight are required",
+                    "text/plain",
+                )
+                return
+
+            conn = sqlite3.connect(DB_PATH)
+            order_of_slaughter = get_next_order_of_slaughter(station, conn)
+
+            if recorded_at:
+                conn.execute(
+                    """
+                    INSERT INTO measurements
+                        (order_of_slaughter, station, weight, recorded_at)
+                    VALUES
+                        (?, ?, ?, ?)
+                    """,
+                    (
+                        order_of_slaughter,
+                        station,
+                        float(weight),
+                        recorded_at,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO measurements
+                        (order_of_slaughter, station, weight)
+                    VALUES
+                        (?, ?, ?)
+                    """,
+                    (
+                        order_of_slaughter,
+                        station,
+                        float(weight),
+                    ),
+                )
+            
+            conn.commit()
+            conn.close()
+
+            self._send(
+                200,
+                "Measurement inserted.",
+                "text/plain",
+            )
+
+            return
             
         # ====================================================
         # JSON API
@@ -312,27 +419,55 @@ class Handler(BaseHTTPRequestHandler):
         live_rows = [r for r in rows if r['station'] == 'live']
         hang_rows = [r for r in rows if r['station'] == 'hang']
 
-        live_rows_html = "".join(
-            (
-                f"<tr class=\"{'even-row' if r['order_of_slaughter'] % 2 == 0 else ''}\">"
-                f"<td>{r['order_of_slaughter']}</td>"
-                f"<td>{int(round(r['weight']))}</td>"
-                f"<td>{html.escape(str(r['recorded_at']))}</td>"
-                "</tr>"
-            )
-            for r in live_rows
-        )
+        def parse_db_date(date_str):
+            try:
+                # SQLite datetime('now') returns YYYY-MM-DD HH:MM:SS
+                # But handle possible 'T' separator just in case.
+                clean_str = date_str.replace('T', ' ')
+                return datetime.datetime.strptime(clean_str, '%Y-%m-%d %H:%M:%S')
+            except Exception:
+                return None
 
-        hang_rows_html = "".join(
-            (
-                f"<tr class=\"{'row-pair-colored' if math.ceil(r['order_of_slaughter'] / 2) % 2 == 0 else ''}\">"
+        live_rows_list = []
+        last_live_time = None
+        for r in live_rows:
+            current_time = parse_db_date(r['recorded_at'])
+            if last_live_time and current_time:
+                # In descending order, last_live_time is newer than current_time.
+                if (last_live_time - current_time).total_seconds() > 30:
+                    live_rows_list.append("<tr class='time-gap'><td colspan='3'></td></tr>")
+            
+            row_class = 'even-row' if r['order_of_slaughter'] % 2 == 0 else ''
+            live_rows_list.append(
+                f"<tr class=\"{row_class}\">"
                 f"<td>{r['order_of_slaughter']}</td>"
                 f"<td>{int(round(r['weight']))}</td>"
-                f"<td>{html.escape(str(r['recorded_at']))}</td>"
+                f"<td>{html.escape(format_indiana_time(current_time))}</td>"
                 "</tr>"
             )
-            for r in hang_rows
-        )
+            if current_time:
+                last_live_time = current_time
+        live_rows_html = "".join(live_rows_list)
+
+        hang_rows_list = []
+        last_hang_time = None
+        for r in hang_rows:
+            current_time = parse_db_date(r['recorded_at'])
+            if last_hang_time and current_time:
+                if (last_hang_time - current_time).total_seconds() > 30:
+                    hang_rows_list.append("<tr class='time-gap'><td colspan='3'></td></tr>")
+            
+            row_class = 'row-pair-colored' if math.ceil(r['order_of_slaughter'] / 2) % 2 == 0 else ''
+            hang_rows_list.append(
+                f"<tr class=\"{row_class}\">"
+                f"<td>{r['order_of_slaughter']}</td>"
+                f"<td>{int(round(r['weight']))}</td>"
+                f"<td>{html.escape(format_indiana_time(current_time))}</td>"
+                "</tr>"
+            )
+            if current_time:
+                last_hang_time = current_time
+        hang_rows_html = "".join(hang_rows_list)
 
         report_controls_html = ""
         if page == 'report':
@@ -387,6 +522,12 @@ class Handler(BaseHTTPRequestHandler):
             "flex:1;"
             "min-width:300px;"
             "max-width:600px;"
+            "}"
+
+            ".time-gap td {"
+            "    background-coli or: #000;"
+            "    padding: 2px 0;"
+            "    border: none;"
             "}"
 
             ".even-row, .row-pair-colored {"
@@ -477,15 +618,32 @@ class Handler(BaseHTTPRequestHandler):
             "            hangTableBody.innerHTML = '';"
             "            const liveRows = data.filter(r => r.station === 'live');"
             "            const hangRows = data.filter(r => r.station === 'hang');"
+            "            let lastLiveTime = null;"
             "            liveRows.forEach(r => {"
+            "                const currentTime = new Date(r.recorded_at + 'Z');"
+            "                if (lastLiveTime && (lastLiveTime - currentTime) > 30000) {"
+            "                    const gapRow = document.createElement('tr');"
+            "                    gapRow.className = 'time-gap';"
+            "                    gapRow.innerHTML = `<td colspan='3'></td>`;"
+            "                    liveTableBody.appendChild(gapRow);"
+            "                }"
             "                const row = document.createElement('tr');"
             "                if (r.order_of_slaughter % 2 === 0) {"
             "                    row.className = 'even-row';"
             "                }"
             "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${formatIndianaTime(r.recorded_at)}</td>`;"
             "                liveTableBody.appendChild(row);"
+            "                lastLiveTime = currentTime;"
             "            });"
+            "            let lastHangTime = null;"
             "            hangRows.forEach(r => {"
+            "                const currentTime = new Date(r.recorded_at + 'Z');"
+            "                if (lastHangTime && (lastHangTime - currentTime) > 30000) {"
+            "                    const gapRow = document.createElement('tr');"
+            "                    gapRow.className = 'time-gap';"
+            "                    gapRow.innerHTML = `<td colspan='3'></td>`;"
+            "                    hangTableBody.appendChild(gapRow);"
+            "                }"
             "                const row = document.createElement('tr');"
             "                const group = Math.ceil(r.order_of_slaughter / 2);"
             "                if (group % 2 === 0) {"
@@ -493,6 +651,7 @@ class Handler(BaseHTTPRequestHandler):
             "                }"
             "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${formatIndianaTime(r.recorded_at)}</td>`;"
             "                hangTableBody.appendChild(row);"
+            "                lastHangTime = currentTime;"
             "            });"
             "            return data;"
             "        })"
@@ -536,6 +695,7 @@ class Handler(BaseHTTPRequestHandler):
             "    updateTables(`/get?date=${dateInput.value}`);"
             "} else {"
             "    const initialUrl = page === 'display' ? '/get?today=true' : '/get';"
+            "    updateTables(initialUrl);"
             "    setInterval(() => updateTables(initialUrl), 2000);"
             "}"
 
