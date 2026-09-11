@@ -434,7 +434,7 @@ class Handler(BaseHTTPRequestHandler):
             current_time = parse_db_date(r['recorded_at'])
             if last_live_time and current_time:
                 # In descending order, last_live_time is newer than current_time.
-                if (last_live_time - current_time).total_seconds() > 30:
+                if (last_live_time - current_time).total_seconds() > 60:
                     live_rows_list.append("<tr class='time-gap'><td colspan='3'></td></tr>")
             
             row_class = 'even-row' if r['order_of_slaughter'] % 2 == 0 else ''
@@ -454,7 +454,7 @@ class Handler(BaseHTTPRequestHandler):
         for r in hang_rows:
             current_time = parse_db_date(r['recorded_at'])
             if last_hang_time and current_time:
-                if (last_hang_time - current_time).total_seconds() > 30:
+                if (last_hang_time - current_time).total_seconds() > 60:
                     hang_rows_list.append("<tr class='time-gap'><td colspan='3'></td></tr>")
             
             row_class = 'row-pair-colored' if math.ceil(r['order_of_slaughter'] / 2) % 2 == 0 else ''
@@ -525,8 +525,8 @@ class Handler(BaseHTTPRequestHandler):
             "}"
 
             ".time-gap td {"
-            "    background-coli or: #000;"
-            "    padding: 2px 0;"
+            "    background-color: #000;"
+            "    padding: 4px 0;"
             "    border: none;"
             "}"
 
@@ -621,7 +621,7 @@ class Handler(BaseHTTPRequestHandler):
             "            let lastLiveTime = null;"
             "            liveRows.forEach(r => {"
             "                const currentTime = new Date(r.recorded_at + 'Z');"
-            "                if (lastLiveTime && (lastLiveTime - currentTime) > 30000) {"
+            "                if (lastLiveTime && (lastLiveTime - currentTime) > 60000) {"
             "                    const gapRow = document.createElement('tr');"
             "                    gapRow.className = 'time-gap';"
             "                    gapRow.innerHTML = `<td colspan='3'></td>`;"
@@ -638,7 +638,7 @@ class Handler(BaseHTTPRequestHandler):
             "            let lastHangTime = null;"
             "            hangRows.forEach(r => {"
             "                const currentTime = new Date(r.recorded_at + 'Z');"
-            "                if (lastHangTime && (lastHangTime - currentTime) > 30000) {"
+            "                if (lastHangTime && (lastHangTime - currentTime) > 60000) {"
             "                    const gapRow = document.createElement('tr');"
             "                    gapRow.className = 'time-gap';"
             "                    gapRow.innerHTML = `<td colspan='3'></td>`;"
