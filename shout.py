@@ -26,10 +26,8 @@ import html
 import json
 import os
 import sqlite3
-
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
-
+from urllib.parse import parse_qs, urlparse
 
 # ============================================================
 # Configuration
@@ -111,8 +109,6 @@ def fetch_recent(seconds):
 class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
-        # Keep normal HTTP request logging quiet.
-        # listen.py already logs measurement captures.
         pass
 
     # --------------------------------------------------------
