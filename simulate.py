@@ -24,7 +24,7 @@ import sys
 import time
 from shutil import which
 
-from evdev import UInput, ecodes, InputDevice
+from evdev import InputDevice, UInput, ecodes
 
 SCANNER_NAME = "Simulated Scanner"
 
