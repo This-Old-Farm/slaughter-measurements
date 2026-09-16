@@ -179,7 +179,6 @@ SEX_CODES = {
 
 
 class Station:
-
     SCAN_PROMPT = "Scan an animal."
     NEXT_SCAN_PROMPT = "Scan next animal."
 
@@ -249,18 +248,17 @@ class Station:
     def handle_barcode(self, barcode):
 
         self.animal_id = barcode
-        
+
         log.info(
-        		"%s: SCANNED: %s",
-        		self.name,
-        		self.animal_id,
+            "%s: SCANNED: %s",
+            self.name,
+            self.animal_id,
         )
-        
+
         log.info(
-        		"%s: Waiting for weight...",
-        		self.name,
+            "%s: Waiting for weight...",
+            self.name,
         )
-        
 
     # ========================================================
     # Scanner handling
@@ -269,7 +267,6 @@ class Station:
     def handle_scanner(self):
 
         for event in self.scanner.read():
-
             if event.type != ecodes.EV_KEY:
                 continue
 
@@ -284,10 +281,7 @@ class Station:
             # ------------------------------------------------
 
             if key == "KEY_ENTER":
-
-
                 if self.barcode_buffer == "GO":
-
                     log.info(
                         "%s: SCANNED: %s",
                         self.name,
@@ -301,8 +295,8 @@ class Station:
                     self.go_scanned = True
 
                     barcode = self.barcode_buffer
-										self.barcode_buffer = ""
-                    
+                    self.barcode_buffer = ""
+
                     self.handle_barcode(barcode)
 
                 continue
@@ -339,12 +333,12 @@ class Station:
             """,
             (
                 order_of_slaughter,
-								self.barcode_buffer,
+                self.barcode_buffer,
                 self.name,
                 weight,
             ),
         )
-        
+
         measurement_id = cursor.lastrowid
 
         db.commit()
@@ -370,7 +364,6 @@ class Station:
 
         return measurement_id
 
-
     # ========================================================
     # Cleanup
     # ========================================================
@@ -394,7 +387,6 @@ class Station:
 
 
 class LiveStation(Station):
-
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
@@ -407,189 +399,181 @@ class LiveStation(Station):
     def get_species(self, animal_id):
 
         if not animal_id:
-        		return None
-        
+            return None
+
         species_code = animal_id[-1].upper()
-        
+
         species_codes = {
-        		"B": "BEEF",
-        		"P": "PORK",
-        		"L": "LAMB",
+            "B": "BEEF",
+            "P": "PORK",
+            "L": "LAMB",
         }
-        
+
         return species_codes.get(species_code)
 
     def handle_barcode(self, barcode):
 
         barcode = barcode.upper()
 
-				# Once sex/type has been recorded, the station is
+        # Once sex/type has been recorded, the station is
         # waiting for weight and should not accept more
         # metadata barcodes for this animal.
         if self.animal_id is not None and self.sex is not None:
-        
             log.warning(
-                "%s: Barcode %s ignored - "
-                "waiting for weight for %s.",
+                "%s: Barcode %s ignored - waiting for weight for %s.",
                 self.name,
                 barcode,
                 self.animal_id,
             )
-        
+
             return
-        
+
         # --------------------------------------------------------
         # No animal pending: this barcode must be the animal ID.
         # --------------------------------------------------------
-        
+
         if self.animal_id is None:
-        
-        		species = self.get_species(barcode)
-        
-        		if species is None:
-        
-        				log.warning(
-        						"%s: Invalid animal ID %s - "
-        						"expected ID ending in B, P, or L.",
-        						self.name,
-        						barcode,
-        				)
-        
-        				return
-        
-        		self.animal_id = barcode
-        		self.species = species
-        		self.sex = None
-        		self.over_30_months = False
-        
-        		log.info(
-        				"%s: ANIMAL: %s (%s)",
-        				self.name,
-        				self.animal_id,
-        				self.species,
-        		)
-        
-        		log.info(
-        				"%s: Waiting for sex/type scan...",
-        				self.name,
-        		)
-        
-        		return
-        
+            species = self.get_species(barcode)
+
+            if species is None:
+                log.warning(
+                    "%s: Invalid animal ID %s - expected ID ending in B, P, or L.",
+                    self.name,
+                    barcode,
+                )
+
+                return
+
+            self.animal_id = barcode
+            self.species = species
+            self.sex = None
+            self.over_30_months = False
+
+            log.info(
+                "%s: ANIMAL: %s (%s)",
+                self.name,
+                self.animal_id,
+                self.species,
+            )
+
+            log.info(
+                "%s: Waiting for sex/type scan...",
+                self.name,
+            )
+
+            return
+
         # --------------------------------------------------------
         # Optional PLUS30 scan
         # --------------------------------------------------------
-        
+
         if barcode == "PLUS30":
-        
-        		if self.species != "BEEF":
-        
-        				log.warning(
-        						"%s: PLUS30 is only valid for BEEF.",
-        						self.name,
-        				)
-        
-        				return
-        
-        		self.over_30_months = True
-        
-        		log.info(
-        				"%s: +30 recorded for %s.",
-        				self.name,
-        				self.animal_id,
-        		)
-        
-        		return
-        
+            if self.species != "BEEF":
+                log.warning(
+                    "%s: PLUS30 is only valid for BEEF.",
+                    self.name,
+                )
+
+                return
+
+            self.over_30_months = True
+
+            log.info(
+                "%s: +30 recorded for %s.",
+                self.name,
+                self.animal_id,
+            )
+
+            return
+
         # --------------------------------------------------------
         # Sex/type scan
         # --------------------------------------------------------
-        
+
         valid_codes = SEX_CODES[self.species]
-        
+
         if barcode not in valid_codes:
-        
-        		log.warning(
-        				"%s: Invalid %s sex/type code: %s",
-        				self.name,
-        				self.species,
-        				barcode,
-        		)
-        
-        		return
-        
+            log.warning(
+                "%s: Invalid %s sex/type code: %s",
+                self.name,
+                self.species,
+                barcode,
+            )
+
+            return
+
         self.sex = valid_codes[barcode]
-        
+
         log.info(
-        		"%s: SEX/TYPE: %s (%s)",
-        		self.name,
-        		barcode,
-        		self.sex,
+            "%s: SEX/TYPE: %s (%s)",
+            self.name,
+            barcode,
+            self.sex,
         )
-        
+
         log.info(
-        		"%s: Waiting for weight...",
-        		self.name,
+            "%s: Waiting for weight...",
+            self.name,
         )
-        
+
     def save_measurement(self, weight):
 
         # LIVE measurements require an animal ID and
         # a completed sex/type scan.
         if self.animal_id is None:
-        		return
-        
+            return
+
         if self.sex is None:
-        		return
-        
+            return
+
         # Preserve the metadata because the base save method
         # clears animal_id after successfully saving the weight.
         animal_id = self.animal_id
         species = self.species
         sex = self.sex
         over_30_months = self.over_30_months
-        
+
         # Save the normal measurement first.
         measurement_id = super().save_measurement(weight)
-        
+
         if measurement_id is None:
-        		return
-        
+            return
+
         # Store the additional LIVE animal information separately
         # so the measurements table schema remains unchanged.
         db.execute(
-        		"""
-        		INSERT INTO animal_details
-        				(
-        						measurement_id,
-        						animal_id,
-        						species,
-        						sex,
-        						over_30_months
-        				)
-        		VALUES
-        				(?, ?, ?, ?, ?)
-        		""",
-        		(
-        				measurement_id,
-        				animal_id,
-        				species,
-        				sex,
-        				int(over_30_months),
-        		),
+            """
+                INSERT INTO animal_details
+                        (
+                                measurement_id,
+                                animal_id,
+                                species,
+                                sex,
+                                over_30_months
+                        )
+                VALUES
+                        (?, ?, ?, ?, ?)
+                """,
+            (
+                measurement_id,
+                animal_id,
+                species,
+                sex,
+                int(over_30_months),
+            ),
         )
-        
+
         db.commit()
-        
+
         log.info(
-        		"%s: ANIMAL DETAILS: %s,%s,%s,+30=%s",
-        		self.name,
-        		animal_id,
-        		species,
-        		sex,
-        		"YES" if over_30_months else "NO",
+            "%s: ANIMAL DETAILS: %s,%s,%s,+30=%s",
+            self.name,
+            animal_id,
+            species,
+            sex,
+            "YES" if over_30_months else "NO",
         )
-        
+
         # Reset LIVE-only state for the next animal.
         self.species = None
         self.sex = None
@@ -603,13 +587,11 @@ class LiveStation(Station):
             return
 
         try:
-
             weight_text = raw.decode("ascii").strip()
 
             weight = float(weight_text)
 
         except (UnicodeDecodeError, ValueError):
-
             log.warning(
                 "%s: Invalid scale data: %r",
                 self.name,
@@ -627,7 +609,6 @@ class LiveStation(Station):
 
 
 class HangStation(Station):
-
     SCAN_PROMPT = "Scan a row token."
     NEXT_SCAN_PROMPT = "Scan next row token."
 
@@ -702,11 +683,9 @@ class HangStation(Station):
         # ----------------------------------------------------
 
         try:
-
             message = raw.decode("ascii")
 
         except UnicodeDecodeError:
-
             log.warning(
                 "%s: Non-ASCII IQ355+ data: %r",
                 self.name,
@@ -734,7 +713,6 @@ class HangStation(Station):
             return None
 
         if ord(message[0]) != 0x02:
-
             log.debug(
                 "%s: IQ355+ packet missing STX: %r",
                 self.name,
@@ -762,9 +740,8 @@ class HangStation(Station):
         # ----------------------------------------------------
 
         if len(data) != 11:
-
             log.debug(
-                "%s: IQ355+ unexpected packet " "length %d: %r",
+                "%s: IQ355+ unexpected packet length %d: %r",
                 self.name,
                 len(data),
                 raw,
@@ -791,15 +768,12 @@ class HangStation(Station):
         # ----------------------------------------------------
 
         if polarity == " ":
-
             negative = False
 
         elif polarity == "-":
-
             negative = True
 
         elif polarity == "^":
-
             log.warning(
                 "%s: IQ355+ reports overload.",
                 self.name,
@@ -808,7 +782,6 @@ class HangStation(Station):
             return None
 
         elif polarity == "]":
-
             log.warning(
                 "%s: IQ355+ reports underrange.",
                 self.name,
@@ -817,7 +790,6 @@ class HangStation(Station):
             return None
 
         else:
-
             log.warning(
                 "%s: IQ355+ unknown polarity: %r",
                 self.name,
@@ -831,28 +803,24 @@ class HangStation(Station):
         # ----------------------------------------------------
 
         if status == "M":
-
             # Motion is normal while the carcass is moving.
             # Ignore it and continue waiting for a valid
             # stable reading.
             return None
 
         if status == "I":
-
             # Invalid reading.
             return None
 
         if status == "O":
-
             log.warning(
-                "%s: IQ355+ reports " "over/under range.",
+                "%s: IQ355+ reports over/under range.",
                 self.name,
             )
 
             return None
 
         if status != " ":
-
             log.warning(
                 "%s: IQ355+ unknown status: %r",
                 self.name,
@@ -866,9 +834,8 @@ class HangStation(Station):
         # ----------------------------------------------------
 
         if unit != "L":
-
             log.warning(
-                "%s: IQ355+ ignored reading " "because unit is %r, not pounds.",
+                "%s: IQ355+ ignored reading because unit is %r, not pounds.",
                 self.name,
                 unit,
             )
@@ -880,9 +847,8 @@ class HangStation(Station):
         # ----------------------------------------------------
 
         if gross_net != "G":
-
             log.warning(
-                "%s: IQ355+ ignored reading " "because mode is %r, not gross.",
+                "%s: IQ355+ ignored reading because mode is %r, not gross.",
                 self.name,
                 gross_net,
             )
@@ -894,13 +860,11 @@ class HangStation(Station):
         # ----------------------------------------------------
 
         try:
-
             weight = float(weight_text.strip())
 
         except ValueError:
-
             log.warning(
-                "%s: IQ355+ invalid weight " "field: %r",
+                "%s: IQ355+ invalid weight field: %r",
                 self.name,
                 weight_text,
             )
@@ -920,6 +884,7 @@ class HangStation(Station):
 # ============================================================
 # Signal handling
 # ============================================================
+
 
 class Shutdown(Exception):
     """Raised to unwind to the cleanup block on SIGTERM/SIGINT."""
@@ -954,7 +919,6 @@ live = None
 hang = None
 
 try:
-
     log.info("Starting slaughter measurement capture...")
 
     # --------------------------------------------------------
@@ -989,13 +953,11 @@ try:
     # ========================================================
 
     while True:
-
         # Build a list containing all scanner and scale
         # file descriptors.
         inputs = []
 
         for station in stations:
-
             inputs.append(station.scanner.fd)
 
             inputs.append(station.scale.fileno())
@@ -1012,13 +974,10 @@ try:
         # ----------------------------------------------------
 
         for station in stations:
-
             if station.scanner.fd in readable:
-
                 station.handle_scanner()
 
             if station.scale.fileno() in readable:
-
                 station.handle_scale()
 
 
@@ -1027,12 +986,10 @@ try:
 # ============================================================
 
 except (KeyboardInterrupt, Shutdown):
-
     log.info("Stopping slaughter measurement capture...")
 
 
 finally:
-
     if live is not None:
         live.close()
 

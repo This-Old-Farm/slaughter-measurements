@@ -22,16 +22,14 @@ Environment:
         Default: 80
 """
 
+import datetime
 import html
 import json
+import math
 import os
 import sqlite3
-import datetime
-import math
-
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
-
+from urllib.parse import parse_qs, urlparse
 
 # ============================================================
 # Configuration
@@ -85,6 +83,7 @@ db_init.close()
 # Database queries
 # ============================================================
 
+
 def get_next_order_of_slaughter(station_name, conn):
     """
     Get the next order number for a given station for the current day.
@@ -103,15 +102,17 @@ def get_next_order_of_slaughter(station_name, conn):
         return 1
     return max_order + 1
 
+
 def format_indiana_time(date_obj):
     """
     Format a datetime object to Indiana time string.
     """
     if not date_obj:
-        return ''
+        return ""
     # This is a simplistic way to handle timezone, for more complex scenarios
     # a library like pytz would be better. Assuming the server is in UTC.
-    return (date_obj - datetime.timedelta(hours=5)).strftime('%Y-%m-%d %I:%M:%S %p')
+    return (date_obj - datetime.timedelta(hours=5)).strftime("%Y-%m-%d %I:%M:%S %p")
+
 
 def fetch_recent(seconds=None, date=None):
 
@@ -136,7 +137,6 @@ def fetch_recent(seconds=None, date=None):
         """
         params = (f"-{int(seconds)} seconds",)
 
-
     rows = conn.execute(query, params).fetchall()
 
     conn.close()
@@ -148,8 +148,8 @@ def fetch_recent(seconds=None, date=None):
 # HTTP Handler
 # ============================================================
 
-class Handler(BaseHTTPRequestHandler):
 
+class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         # Keep normal HTTP request logging quiet.
         # listen.py already logs measurement captures.
@@ -198,14 +198,11 @@ class Handler(BaseHTTPRequestHandler):
         # ====================================================
 
         if parsed.path == "/test":
-
-            rows = fetch_recent(
-                seconds=DEFAULT_SECONDS
-            )
+            rows = fetch_recent(seconds=DEFAULT_SECONDS)
 
             self._send(
                 200,
-                self.render_html(rows, page='test'),
+                self.render_html(rows, page="test"),
                 "text/html; charset=utf-8",
             )
 
@@ -216,18 +213,15 @@ class Handler(BaseHTTPRequestHandler):
         # ====================================================
 
         if parsed.path == "/display":
-
             now = datetime.datetime.now()
             midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
             seconds_since_midnight = (now - midnight).total_seconds()
 
-            rows = fetch_recent(
-                seconds=seconds_since_midnight
-            )
+            rows = fetch_recent(seconds=seconds_since_midnight)
 
             self._send(
                 200,
-                self.render_html(rows, page='display'),
+                self.render_html(rows, page="display"),
                 "text/html; charset=utf-8",
             )
 
@@ -238,16 +232,13 @@ class Handler(BaseHTTPRequestHandler):
         # ====================================================
 
         if parsed.path == "/report":
-            
             today_str = datetime.date.today().isoformat()
-            
-            rows = fetch_recent(
-                date=today_str
-            )
+
+            rows = fetch_recent(date=today_str)
 
             self._send(
                 200,
-                self.render_html(rows, page='report'),
+                self.render_html(rows, page="report"),
                 "text/html; charset=utf-8",
             )
 
@@ -318,7 +309,7 @@ class Handler(BaseHTTPRequestHandler):
                         float(weight),
                     ),
                 )
-            
+
             conn.commit()
             conn.close()
 
@@ -329,15 +320,14 @@ class Handler(BaseHTTPRequestHandler):
             )
 
             return
-            
+
         # ====================================================
         # JSON API
         # ====================================================
 
         if parsed.path == "/get":
-
             if date_str := qs.get("date", [None])[0]:
-                 rows = fetch_recent(date=date_str)
+                rows = fetch_recent(date=date_str)
             elif qs.get("today"):
                 now = datetime.datetime.now()
                 midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -350,32 +340,21 @@ class Handler(BaseHTTPRequestHandler):
                 )[0]
 
                 try:
-
-                    seconds_int = int(
-                        seconds
-                    )
+                    seconds_int = int(seconds)
 
                     if seconds_int < 0:
                         raise ValueError
 
                 except (TypeError, ValueError):
-
                     self._send(
                         400,
-                        json.dumps(
-                            {
-                                "error":
-                                "seconds must be a non-negative integer"
-                            }
-                        ),
+                        json.dumps({"error": "seconds must be a non-negative integer"}),
                         "application/json",
                     )
 
                     return
 
-                rows = fetch_recent(
-                    seconds=seconds_int
-                )
+                rows = fetch_recent(seconds=seconds_int)
 
             payload = [
                 {
@@ -414,32 +393,32 @@ class Handler(BaseHTTPRequestHandler):
     # --------------------------------------------------------
 
     @staticmethod
-    def render_html(rows, page='test'):
+    def render_html(rows, page="test"):
 
-        live_rows = [r for r in rows if r['station'] == 'live']
-        hang_rows = [r for r in rows if r['station'] == 'hang']
+        live_rows = [r for r in rows if r["station"] == "live"]
+        hang_rows = [r for r in rows if r["station"] == "hang"]
 
         def parse_db_date(date_str):
             try:
                 # SQLite datetime('now') returns YYYY-MM-DD HH:MM:SS
                 # But handle possible 'T' separator just in case.
-                clean_str = date_str.replace('T', ' ')
-                return datetime.datetime.strptime(clean_str, '%Y-%m-%d %H:%M:%S')
+                clean_str = date_str.replace("T", " ")
+                return datetime.datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S")
             except Exception:
                 return None
 
         live_rows_list = []
         last_live_time = None
         for r in live_rows:
-            current_time = parse_db_date(r['recorded_at'])
+            current_time = parse_db_date(r["recorded_at"])
             if last_live_time and current_time:
                 # In descending order, last_live_time is newer than current_time.
                 if (last_live_time - current_time).total_seconds() > 180:
                     live_rows_list.append("<tr class='time-gap'><td colspan='3'></td></tr>")
-            
-            row_class = 'even-row' if r['order_of_slaughter'] % 2 == 0 else ''
+
+            row_class = "even-row" if r["order_of_slaughter"] % 2 == 0 else ""
             live_rows_list.append(
-                f"<tr class=\"{row_class}\">"
+                f'<tr class="{row_class}">'
                 f"<td>{r['order_of_slaughter']}</td>"
                 f"<td>{int(round(r['weight']))}</td>"
                 f"<td>{html.escape(format_indiana_time(current_time))}</td>"
@@ -452,14 +431,16 @@ class Handler(BaseHTTPRequestHandler):
         hang_rows_list = []
         last_hang_time = None
         for r in hang_rows:
-            current_time = parse_db_date(r['recorded_at'])
+            current_time = parse_db_date(r["recorded_at"])
             if last_hang_time and current_time:
                 if (last_hang_time - current_time).total_seconds() > 180:
                     hang_rows_list.append("<tr class='time-gap'><td colspan='3'></td></tr>")
-            
-            row_class = 'row-pair-colored' if math.ceil(r['order_of_slaughter'] / 2) % 2 == 0 else ''
+
+            row_class = (
+                "row-pair-colored" if math.ceil(r["order_of_slaughter"] / 2) % 2 == 0 else ""
+            )
             hang_rows_list.append(
-                f"<tr class=\"{row_class}\">"
+                f'<tr class="{row_class}">'
                 f"<td>{r['order_of_slaughter']}</td>"
                 f"<td>{int(round(r['weight']))}</td>"
                 f"<td>{html.escape(format_indiana_time(current_time))}</td>"
@@ -470,7 +451,7 @@ class Handler(BaseHTTPRequestHandler):
         hang_rows_html = "".join(hang_rows_list)
 
         report_controls_html = ""
-        if page == 'report':
+        if page == "report":
             report_controls_html = """
                 <div class="controls">
                     <label for="report-date">Select Date:</label>
@@ -485,55 +466,46 @@ class Handler(BaseHTTPRequestHandler):
             "<head>"
             "<meta charset='utf-8'>"
             "<title>Slaughter Measurements</title>"
-            "<script src=\"https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js\"></script>"
-
+            '<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>'
             "<style>"
             "body{"
             "font:14px monospace;"
             "margin:2em;"
             "}"
-
             "table{"
             "border-collapse:collapse;"
             "margin-bottom:2em;"
             "width:100%;"
             "}"
-
             "th,td{"
             "padding:0.5em 1em;"
             "border:1px solid #ccc;"
             "}"
-
             "th{"
             "text-align:left;"
             "background-color:#343a40;"
             "color:#ffffff;"
             "border-bottom:3px solid #1a1a1a;"
             "}"
-
             ".tables-container{"
             "display:flex;"
             "gap:3em;"
             "flex-wrap:wrap;"
             "width:100%;"
             "}"
-
             ".table-column{"
             "flex:1;"
             "min-width:300px;"
             "max-width:600px;"
             "}"
-
             ".time-gap td {"
             "    background-color: #000;"
             "    padding: 4px 0;"
             "    border: none;"
             "}"
-
             ".even-row, .row-pair-colored {"
             "background-color: #f9f9f9;"
             "}"
-
             ".controls {"
             "margin-bottom: 2em;"
             "display: flex;"
@@ -541,17 +513,11 @@ class Handler(BaseHTTPRequestHandler):
             "align-items: center;"
             "}"
             "</style>"
-
             "</head>"
-
             "<body>"
-
             "<h1>Slaughter Measurements</h1>"
-            
             f"{report_controls_html}"
-
             "<div class='tables-container'>"
-
             "<div class='table-column'>"
             "<h2>Live Station Scans</h2>"
             "<table>"
@@ -565,7 +531,6 @@ class Handler(BaseHTTPRequestHandler):
             "</tbody>"
             "</table>"
             "</div>"
-
             "<div class='table-column'>"
             "<h2>Hang Station Scans</h2>"
             "<table>"
@@ -579,9 +544,7 @@ class Handler(BaseHTTPRequestHandler):
             "</tbody>"
             "</table>"
             "</div>"
-
             "</div>"
-
             "<script>"
             "function escapeHtml(unsafe) {"
             "    return unsafe"
@@ -591,7 +554,6 @@ class Handler(BaseHTTPRequestHandler):
             "         .replace(/\"/g, '&quot;')"
             "         .replace(/'/g, '&#039;');"
             "}"
-
             "function formatIndianaTime(utcString) {"
             "    if (!utcString) return '';"
             "    const date = new Date(utcString + 'Z');"
@@ -607,7 +569,6 @@ class Handler(BaseHTTPRequestHandler):
             "    };"
             "    return new Intl.DateTimeFormat('en-US', options).format(date);"
             "}"
-
             "function updateTables(url) {"
             "    return fetch(url)"
             "        .then(response => response.json())"
@@ -657,9 +618,7 @@ class Handler(BaseHTTPRequestHandler):
             "        })"
             "        .catch(error => console.error('Error fetching measurements:', error));"
             "}"
-            
             "const page = '" + page + "';"
-
             "if (page === 'report') {"
             "    const dateInput = document.getElementById('report-date');"
             "    const exportBtn = document.getElementById('export-btn');"
@@ -668,11 +627,9 @@ class Handler(BaseHTTPRequestHandler):
             "    const mm = String(today.getMonth() + 1).padStart(2, '0');"
             "    const dd = String(today.getDate()).padStart(2, '0');"
             "    dateInput.value = `${yyyy}-${mm}-${dd}`;"
-
             "    dateInput.addEventListener('change', () => {"
             "        updateTables(`/get?date=${dateInput.value}`);"
             "    });"
-
             "    exportBtn.addEventListener('click', () => {"
             "        const date = dateInput.value;"
             "        updateTables(`/get?date=${date}`).then(data => {"
@@ -691,16 +648,13 @@ class Handler(BaseHTTPRequestHandler):
             "            XLSX.writeFile(wb, `slaughter_report_${date}.xlsx`);"
             "        });"
             "    });"
-
             "    updateTables(`/get?date=${dateInput.value}`);"
             "} else {"
             "    const initialUrl = page === 'display' ? '/get?today=true' : '/get';"
             "    updateTables(initialUrl);"
             "    setInterval(() => updateTables(initialUrl), 2000);"
             "}"
-
             "</script>"
-
             "</body>"
             "</html>"
         )
@@ -711,7 +665,6 @@ class Handler(BaseHTTPRequestHandler):
 # ============================================================
 
 if __name__ == "__main__":
-
     server = ThreadingHTTPServer(
         (
             "0.0.0.0",
@@ -721,22 +674,18 @@ if __name__ == "__main__":
     )
 
     print(
-        f"shout: serving on :{PORT} "
-        f"(db={DB_PATH})",
+        f"shout: serving on :{PORT} (db={DB_PATH})",
         flush=True,
     )
 
     try:
-
         server.serve_forever()
 
     except KeyboardInterrupt:
-
         print(
             "\nshout: stopping",
             flush=True,
         )
 
     finally:
-
         server.server_close()

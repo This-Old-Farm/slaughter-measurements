@@ -29,11 +29,20 @@ from evdev import InputDevice, UInput, ecodes
 SCANNER_NAME = "Simulated Scanner"
 
 # Keys the barcode scanner can emit (mirrors listen.py's key_map).
-SCANNER_KEYS = [ecodes.KEY_0, ecodes.KEY_1, ecodes.KEY_2, ecodes.KEY_3,
-                ecodes.KEY_4, ecodes.KEY_5, ecodes.KEY_6, ecodes.KEY_7,
-                ecodes.KEY_8, ecodes.KEY_9, ecodes.KEY_MINUS,
-                ecodes.KEY_ENTER] + \
-               [getattr(ecodes, f"KEY_{c}") for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
+SCANNER_KEYS = [
+    ecodes.KEY_0,
+    ecodes.KEY_1,
+    ecodes.KEY_2,
+    ecodes.KEY_3,
+    ecodes.KEY_4,
+    ecodes.KEY_5,
+    ecodes.KEY_6,
+    ecodes.KEY_7,
+    ecodes.KEY_8,
+    ecodes.KEY_9,
+    ecodes.KEY_MINUS,
+    ecodes.KEY_ENTER,
+] + [getattr(ecodes, f"KEY_{c}") for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
 
 CHAR_TO_KEY = {str(d): f"KEY_{d}" for d in range(10)}
 CHAR_TO_KEY.update({c: f"KEY_{c}" for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"})
@@ -86,11 +95,13 @@ def resolve_listener():
     if candidate:
         candidates.append(candidate)
     here = os.path.dirname(os.path.abspath(__file__))
-    candidates.extend([
-        os.path.join(here, "listen-slaughter-measurements"),
-        os.path.join(here, "listen.py"),
-        "listen-slaughter-measurements",
-    ])
+    candidates.extend(
+        [
+            os.path.join(here, "listen-slaughter-measurements"),
+            os.path.join(here, "listen.py"),
+            "listen-slaughter-measurements",
+        ]
+    )
     for c in candidates:
         if os.path.isfile(c):
             return [sys.executable, c]
@@ -123,8 +134,7 @@ def main():
         env=env,
     )
     print(f"[sim] {listener_cmd[1]} started (pid {listener.pid})", flush=True)
-    print("[sim] type an animal ID + Enter to scan, a number + Enter to weigh",
-          flush=True)
+    print("[sim] type an animal ID + Enter to scan, a number + Enter to weigh", flush=True)
     print(flush=True)
 
     def inject_scan(text):
