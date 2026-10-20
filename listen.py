@@ -205,7 +205,10 @@ class Station:
 
         # Each station gets its own independent state.
         self.barcode_buffer = ""
-        self.go_scanned = False
+
+        # The code scanned for the weight about to be captured.
+        # None means a weight arriving now is not saved.
+        self.scan_code = None
 
         # ----------------------------------------------------
         # Scanner
@@ -256,12 +259,21 @@ class Station:
 
     def handle_barcode(self, barcode):
 
-        self.animal_id = barcode
+        if barcode != "GO":
+            log.warning(
+                "%s: Barcode %s ignored - scan 'GO' to capture weight.",
+                self.name,
+                barcode,
+            )
+
+            return
+
+        self.scan_code = barcode
 
         log.info(
             "%s: SCANNED: %s",
             self.name,
-            self.animal_id,
+            self.scan_code,
         )
 
         log.info(
@@ -290,22 +302,10 @@ class Station:
             # ------------------------------------------------
 
             if key == "KEY_ENTER":
-                if self.barcode_buffer == "GO":
-                    log.info(
-                        "%s: SCANNED: %s",
-                        self.name,
-                        self.barcode_buffer,
-                    )
+                barcode = self.barcode_buffer
+                self.barcode_buffer = ""
 
-                    log.info(
-                        "%s: Waiting for weight...",
-                        self.name,
-                    )
-                    self.go_scanned = True
-
-                    barcode = self.barcode_buffer
-                    self.barcode_buffer = ""
-
+                if barcode:
                     self.handle_barcode(barcode)
 
                 continue
@@ -325,7 +325,7 @@ class Station:
 
     def save_measurement(self, weight):
 
-        if not self.go_scanned:
+        if self.scan_code is None:
             return
 
         # Round to the nearest integer
@@ -342,7 +342,7 @@ class Station:
             """,
             (
                 order_of_slaughter,
-                self.barcode_buffer,
+                self.scan_code,
                 self.name,
                 weight,
             ),
@@ -353,17 +353,16 @@ class Station:
         db.commit()
 
         log.info(
-            "%s: CAPTURED: Order %d, %d",
+            "%s: CAPTURED: Order %d, %s, %d",
             self.name,
             order_of_slaughter,
-            self.barcode_buffer,
+            self.scan_code,
             weight,
         )
 
         # Require another barcode before another
         # weight can be accepted.
-        self.go_scanned = False
-        self.barcode_buffer = ""
+        self.scan_code = None
 
         log.info(
             "%s: READY - %s",
@@ -424,24 +423,11 @@ class LiveStation(Station):
 
         barcode = barcode.upper()
 
-        # Once sex/type has been recorded, the station is
-        # waiting for weight and should not accept more
-        # metadata barcodes for this animal.
-        if self.animal_id is not None and self.sex is not None:
-            log.warning(
-                "%s: Barcode %s ignored - waiting for weight for %s.",
-                self.name,
-                barcode,
-                self.animal_id,
-            )
-
-            return
-
         # --------------------------------------------------------
         # No animal pending: this barcode must be the animal ID.
         # --------------------------------------------------------
 
-        if self.animal_id is None:
+        if self.scan_code is None:
             species = self.get_species(barcode)
 
             if species is None:
@@ -453,7 +439,7 @@ class LiveStation(Station):
 
                 return
 
-            self.animal_id = barcode
+            self.scan_code = barcode
             self.species = species
             self.sex = None
             self.over_30_months = False
@@ -461,7 +447,7 @@ class LiveStation(Station):
             log.info(
                 "%s: ANIMAL: %s (%s)",
                 self.name,
-                self.animal_id,
+                self.scan_code,
                 self.species,
             )
 
@@ -490,7 +476,21 @@ class LiveStation(Station):
             log.info(
                 "%s: +30 recorded for %s.",
                 self.name,
-                self.animal_id,
+                self.scan_code,
+            )
+
+            return
+
+        # Once sex/type has been recorded, the station is
+        # waiting for weight and should not accept another
+        # sex/type barcode for this animal. PLUS30 is still
+        # accepted above so it can be scanned in either order.
+        if self.sex is not None:
+            log.warning(
+                "%s: Barcode %s ignored - waiting for weight for %s.",
+                self.name,
+                barcode,
+                self.scan_code,
             )
 
             return
@@ -529,15 +529,15 @@ class LiveStation(Station):
 
         # LIVE measurements require an animal ID and
         # a completed sex/type scan.
-        if self.animal_id is None:
+        if self.scan_code is None:
             return
 
         if self.sex is None:
             return
 
         # Preserve the metadata because the base save method
-        # clears animal_id after successfully saving the weight.
-        animal_id = self.animal_id
+        # clears scan_code after successfully saving the weight.
+        animal_id = self.scan_code
         species = self.species
         sex = self.sex
         over_30_months = self.over_30_months
@@ -639,7 +639,7 @@ class HangStation(Station):
         # been scanned. After a successful capture,
         # save_measurement() clears the scan code, so the
         # continuing stream cannot create duplicate records.
-        if not self.go_scanned:
+        if self.scan_code is None:
             return
 
         self.save_measurement(weight)
