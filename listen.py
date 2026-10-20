@@ -259,14 +259,15 @@ class Station:
 
     def handle_barcode(self, barcode):
 
-        if barcode != "GO":
+        # A second scan before a weight means the first tag was
+        # the wrong one; the most recent scan is the one saved.
+        if self.scan_code is not None:
             log.warning(
-                "%s: Barcode %s ignored - scan 'GO' to capture weight.",
+                "%s: %s replaces %s, which was never weighed.",
                 self.name,
                 barcode,
+                self.scan_code,
             )
-
-            return
 
         self.scan_code = barcode
 
@@ -618,8 +619,8 @@ class LiveStation(Station):
 
 
 class HangStation(Station):
-    SCAN_PROMPT = "Scan a row token."
-    NEXT_SCAN_PROMPT = "Scan next row token."
+    SCAN_PROMPT = "Scan a hang tag."
+    NEXT_SCAN_PROMPT = "Scan next hang tag."
 
     def handle_scale(self):
 
