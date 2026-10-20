@@ -64,12 +64,21 @@ db.execute("""
     CREATE TABLE IF NOT EXISTS measurements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_of_slaughter INTEGER NOT NULL,
-        barcode_buffer TEXT NOT NULL,
+        scan_code TEXT NOT NULL DEFAULT '',
         station TEXT NOT NULL,
         weight REAL NOT NULL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """)
+
+# Databases created before scan_code existed need the column added.
+# barcode_buffer was its name on main before it was ever deployed.
+measurement_columns = {row[1] for row in db.execute("PRAGMA table_info(measurements)")}
+
+if "barcode_buffer" in measurement_columns:
+    db.execute("ALTER TABLE measurements RENAME COLUMN barcode_buffer TO scan_code")
+elif "scan_code" not in measurement_columns:
+    db.execute("ALTER TABLE measurements ADD COLUMN scan_code TEXT NOT NULL DEFAULT ''")
 
 db.execute(
     """
@@ -105,6 +114,23 @@ def get_next_order_of_slaughter(station_name):
     if max_order is None:
         return 1
     return max_order + 1
+
+
+def get_first_order_of_slaughter(station_name, scan_code):
+    """
+    Get the order number a scan code was first given at a station
+    for the current day, or None if it has not been weighed yet.
+    """
+    cursor = db.cursor()
+    cursor.execute(
+        """
+        SELECT MIN(order_of_slaughter)
+        FROM measurements
+        WHERE station = ? AND scan_code = ? AND DATE(recorded_at) = DATE('now', 'localtime')
+        """,
+        (station_name.lower(), scan_code),
+    )
+    return cursor.fetchone()[0]
 
 
 # ============================================================
@@ -196,7 +222,10 @@ class Station:
 
         # Each station gets its own independent state.
         self.barcode_buffer = ""
-        self.go_scanned = False
+
+        # The code scanned for the weight about to be captured.
+        # None means a weight arriving now is not saved.
+        self.scan_code = None
 
         # ----------------------------------------------------
         # Scanner
@@ -247,12 +276,22 @@ class Station:
 
     def handle_barcode(self, barcode):
 
-        self.animal_id = barcode
+        # A second scan before a weight means the first tag was
+        # the wrong one; the most recent scan is the one saved.
+        if self.scan_code is not None:
+            log.warning(
+                "%s: %s replaces %s, which was never weighed.",
+                self.name,
+                barcode,
+                self.scan_code,
+            )
+
+        self.scan_code = barcode
 
         log.info(
             "%s: SCANNED: %s",
             self.name,
-            self.animal_id,
+            self.scan_code,
         )
 
         log.info(
@@ -281,22 +320,10 @@ class Station:
             # ------------------------------------------------
 
             if key == "KEY_ENTER":
-                if self.barcode_buffer == "GO":
-                    log.info(
-                        "%s: SCANNED: %s",
-                        self.name,
-                        self.barcode_buffer,
-                    )
+                barcode = self.barcode_buffer
+                self.barcode_buffer = ""
 
-                    log.info(
-                        "%s: Waiting for weight...",
-                        self.name,
-                    )
-                    self.go_scanned = True
-
-                    barcode = self.barcode_buffer
-                    self.barcode_buffer = ""
-
+                if barcode:
                     self.handle_barcode(barcode)
 
                 continue
@@ -316,24 +343,37 @@ class Station:
 
     def save_measurement(self, weight):
 
-        if not self.go_scanned:
+        if self.scan_code is None:
             return
 
         # Round to the nearest integer
         weight = round(weight)
 
-        order_of_slaughter = get_next_order_of_slaughter(self.name)
+        # A code that was already weighed today is a reweigh and
+        # keeps its original place in the order. Every weight is
+        # kept; matching uses the most recent one.
+        order_of_slaughter = get_first_order_of_slaughter(self.name, self.scan_code)
+
+        if order_of_slaughter is None:
+            order_of_slaughter = get_next_order_of_slaughter(self.name)
+        else:
+            log.warning(
+                "%s: REWEIGH: %s keeps order %d.",
+                self.name,
+                self.scan_code,
+                order_of_slaughter,
+            )
 
         cursor = db.execute(
             """
             INSERT INTO measurements
-                (order_of_slaughter, barcode_buffer, station, weight)
+                (order_of_slaughter, scan_code, station, weight)
             VALUES
                 (?, ?, ?, ?)
             """,
             (
                 order_of_slaughter,
-                self.barcode_buffer,
+                self.scan_code,
                 self.name,
                 weight,
             ),
@@ -344,17 +384,16 @@ class Station:
         db.commit()
 
         log.info(
-            "%s: CAPTURED: Order %d, %d",
+            "%s: CAPTURED: Order %d, %s, %d",
             self.name,
             order_of_slaughter,
-            self.barcode_buffer,
+            self.scan_code,
             weight,
         )
 
         # Require another barcode before another
         # weight can be accepted.
-        self.go_scanned = False
-        self.barcode_buffer = ""
+        self.scan_code = None
 
         log.info(
             "%s: READY - %s",
@@ -415,24 +454,11 @@ class LiveStation(Station):
 
         barcode = barcode.upper()
 
-        # Once sex/type has been recorded, the station is
-        # waiting for weight and should not accept more
-        # metadata barcodes for this animal.
-        if self.animal_id is not None and self.sex is not None:
-            log.warning(
-                "%s: Barcode %s ignored - waiting for weight for %s.",
-                self.name,
-                barcode,
-                self.animal_id,
-            )
-
-            return
-
         # --------------------------------------------------------
         # No animal pending: this barcode must be the animal ID.
         # --------------------------------------------------------
 
-        if self.animal_id is None:
+        if self.scan_code is None:
             species = self.get_species(barcode)
 
             if species is None:
@@ -444,7 +470,7 @@ class LiveStation(Station):
 
                 return
 
-            self.animal_id = barcode
+            self.scan_code = barcode
             self.species = species
             self.sex = None
             self.over_30_months = False
@@ -452,7 +478,7 @@ class LiveStation(Station):
             log.info(
                 "%s: ANIMAL: %s (%s)",
                 self.name,
-                self.animal_id,
+                self.scan_code,
                 self.species,
             )
 
@@ -481,7 +507,21 @@ class LiveStation(Station):
             log.info(
                 "%s: +30 recorded for %s.",
                 self.name,
-                self.animal_id,
+                self.scan_code,
+            )
+
+            return
+
+        # Once sex/type has been recorded, the station is
+        # waiting for weight and should not accept another
+        # sex/type barcode for this animal. PLUS30 is still
+        # accepted above so it can be scanned in either order.
+        if self.sex is not None:
+            log.warning(
+                "%s: Barcode %s ignored - waiting for weight for %s.",
+                self.name,
+                barcode,
+                self.scan_code,
             )
 
             return
@@ -520,15 +560,15 @@ class LiveStation(Station):
 
         # LIVE measurements require an animal ID and
         # a completed sex/type scan.
-        if self.animal_id is None:
+        if self.scan_code is None:
             return
 
         if self.sex is None:
             return
 
         # Preserve the metadata because the base save method
-        # clears animal_id after successfully saving the weight.
-        animal_id = self.animal_id
+        # clears scan_code after successfully saving the weight.
+        animal_id = self.scan_code
         species = self.species
         sex = self.sex
         over_30_months = self.over_30_months
@@ -609,8 +649,8 @@ class LiveStation(Station):
 
 
 class HangStation(Station):
-    SCAN_PROMPT = "Scan a row token."
-    NEXT_SCAN_PROMPT = "Scan next row token."
+    SCAN_PROMPT = "Scan a hang tag."
+    NEXT_SCAN_PROMPT = "Scan next hang tag."
 
     def handle_scale(self):
 
@@ -630,7 +670,7 @@ class HangStation(Station):
         # been scanned. After a successful capture,
         # save_measurement() clears the scan code, so the
         # continuing stream cannot create duplicate records.
-        if not self.go_scanned:
+        if self.scan_code is None:
             return
 
         self.save_measurement(weight)

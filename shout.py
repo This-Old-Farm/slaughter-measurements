@@ -12,6 +12,10 @@ Endpoints:
         N defaults to 43200 seconds (12 hours)
         and must be a non-negative integer.
 
+    GET /matches[?date=YYYY-MM-DD]
+        JSON of live animals matched to hang tags for a day
+        (default today), with QA flags. See matching.py.
+
 Environment:
     DB_PATH
         SQLite database.
@@ -30,6 +34,8 @@ import os
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+
+import matching
 
 # ============================================================
 # Configuration
@@ -68,12 +74,22 @@ db_init.execute(
     CREATE TABLE IF NOT EXISTS measurements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_of_slaughter INTEGER NOT NULL,
+        scan_code TEXT NOT NULL DEFAULT '',
         station TEXT NOT NULL,
         weight REAL NOT NULL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """
 )
+
+# Databases created before scan_code existed need the column added.
+# barcode_buffer was its name on main before it was ever deployed.
+measurement_columns = {row[1] for row in db_init.execute("PRAGMA table_info(measurements)")}
+
+if "barcode_buffer" in measurement_columns:
+    db_init.execute("ALTER TABLE measurements RENAME COLUMN barcode_buffer TO scan_code")
+elif "scan_code" not in measurement_columns:
+    db_init.execute("ALTER TABLE measurements ADD COLUMN scan_code TEXT NOT NULL DEFAULT ''")
 
 db_init.commit()
 db_init.close()
@@ -122,7 +138,7 @@ def fetch_recent(seconds=None, date=None):
 
     if date:
         query = """
-            SELECT id, order_of_slaughter, station, weight, recorded_at
+            SELECT id, order_of_slaughter, scan_code, station, weight, recorded_at
             FROM measurements
             WHERE DATE(recorded_at) = ?
             ORDER BY recorded_at DESC, id DESC
@@ -130,7 +146,7 @@ def fetch_recent(seconds=None, date=None):
         params = (date,)
     else:
         query = """
-            SELECT id, order_of_slaughter, station, weight, recorded_at
+            SELECT id, order_of_slaughter, scan_code, station, weight, recorded_at
             FROM measurements
             WHERE recorded_at >= datetime('now', ?)
             ORDER BY recorded_at DESC, id DESC
@@ -268,6 +284,7 @@ class Handler(BaseHTTPRequestHandler):
             station = qs.get("station", [None])[0]
             weight = qs.get("weight", [None])[0]
             recorded_at = qs.get("recorded_at", [None])[0]
+            scan_code = qs.get("scan_code", [""])[0]
 
             if not station or not weight:
                 self._send(
@@ -284,12 +301,13 @@ class Handler(BaseHTTPRequestHandler):
                 conn.execute(
                     """
                     INSERT INTO measurements
-                        (order_of_slaughter, station, weight, recorded_at)
+                        (order_of_slaughter, scan_code, station, weight, recorded_at)
                     VALUES
-                        (?, ?, ?, ?)
+                        (?, ?, ?, ?, ?)
                     """,
                     (
                         order_of_slaughter,
+                        scan_code,
                         station,
                         float(weight),
                         recorded_at,
@@ -299,12 +317,13 @@ class Handler(BaseHTTPRequestHandler):
                 conn.execute(
                     """
                     INSERT INTO measurements
-                        (order_of_slaughter, station, weight)
+                        (order_of_slaughter, scan_code, station, weight)
                     VALUES
-                        (?, ?, ?)
+                        (?, ?, ?, ?)
                     """,
                     (
                         order_of_slaughter,
+                        scan_code,
                         station,
                         float(weight),
                     ),
@@ -317,6 +336,28 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 "Measurement inserted.",
                 "text/plain",
+            )
+
+            return
+
+        # ====================================================
+        # Matched animals
+        # ====================================================
+
+        if parsed.path == "/matches":
+            date_str = qs.get("date", [datetime.date.today().isoformat()])[0]
+
+            conn = sqlite3.connect(DB_PATH)
+            result = matching.match_day(conn, date_str)
+            conn.close()
+
+            self._send(
+                200,
+                json.dumps(
+                    result,
+                    indent=2,
+                ),
+                "application/json",
             )
 
             return
@@ -360,6 +401,7 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "id": r["id"],
                     "order_of_slaughter": r["order_of_slaughter"],
+                    "scan_code": r["scan_code"],
                     "station": r["station"],
                     "weight": int(round(r["weight"])),
                     "recorded_at": r["recorded_at"],

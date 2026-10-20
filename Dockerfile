@@ -11,6 +11,8 @@ RUN apt-get update \
 COPY listen.py   /usr/local/bin/listen-slaughter-measurements
 COPY shout.py    /usr/local/bin/shout-slaughter-measurements
 COPY simulate.py /usr/local/bin/simulate-slaughter-measurements
+# shout imports matching from its own directory.
+COPY matching.py /usr/local/bin/matching.py
 
 RUN chmod +x /usr/local/bin/listen-slaughter-measurements \
              /usr/local/bin/shout-slaughter-measurements \
