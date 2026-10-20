@@ -35,6 +35,7 @@ import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+import local_time
 import matching
 
 # ============================================================
@@ -102,16 +103,18 @@ db_init.close()
 
 def get_next_order_of_slaughter(station_name, conn):
     """
-    Get the next order number for a given station for the current day.
+    Get the next order number for a given station for the current
+    Indiana day.
     """
+    start, end = local_time.utc_bounds(local_time.local_today())
     cursor = conn.cursor()
     cursor.execute(
         """
         SELECT MAX(order_of_slaughter)
         FROM measurements
-        WHERE station = ? AND DATE(recorded_at) = DATE('now', 'localtime')
+        WHERE station = ? AND recorded_at >= ? AND recorded_at < ?
         """,
-        (station_name.lower(),),
+        (station_name.lower(), start, end),
     )
     max_order = cursor.fetchone()[0]
     if max_order is None:
@@ -121,16 +124,19 @@ def get_next_order_of_slaughter(station_name, conn):
 
 def format_indiana_time(date_obj):
     """
-    Format a datetime object to Indiana time string.
+    Format a naive UTC datetime read from recorded_at as an Indiana
+    time string.
     """
     if not date_obj:
         return ""
-    # This is a simplistic way to handle timezone, for more complex scenarios
-    # a library like pytz would be better. Assuming the server is in UTC.
-    return (date_obj - datetime.timedelta(hours=5)).strftime("%Y-%m-%d %I:%M:%S %p")
+    return local_time.to_local(date_obj).strftime("%Y-%m-%d %I:%M:%S %p")
 
 
 def fetch_recent(seconds=None, date=None):
+    """
+    Fetch measurements from the last N seconds, or from one Indiana
+    date (a date or YYYY-MM-DD string; raises ValueError if invalid).
+    """
 
     conn = sqlite3.connect(DB_PATH)
 
@@ -140,10 +146,10 @@ def fetch_recent(seconds=None, date=None):
         query = """
             SELECT id, order_of_slaughter, scan_code, station, weight, recorded_at
             FROM measurements
-            WHERE DATE(recorded_at) = ?
+            WHERE recorded_at >= ? AND recorded_at < ?
             ORDER BY recorded_at DESC, id DESC
         """
-        params = (date,)
+        params = local_time.utc_bounds(date)
     else:
         query = """
             SELECT id, order_of_slaughter, scan_code, station, weight, recorded_at
@@ -229,11 +235,7 @@ class Handler(BaseHTTPRequestHandler):
         # ====================================================
 
         if parsed.path == "/display":
-            now = datetime.datetime.now()
-            midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            seconds_since_midnight = (now - midnight).total_seconds()
-
-            rows = fetch_recent(seconds=seconds_since_midnight)
+            rows = fetch_recent(date=local_time.local_today())
 
             self._send(
                 200,
@@ -248,9 +250,7 @@ class Handler(BaseHTTPRequestHandler):
         # ====================================================
 
         if parsed.path == "/report":
-            today_str = datetime.date.today().isoformat()
-
-            rows = fetch_recent(date=today_str)
+            rows = fetch_recent(date=local_time.local_today())
 
             self._send(
                 200,
@@ -345,11 +345,24 @@ class Handler(BaseHTTPRequestHandler):
         # ====================================================
 
         if parsed.path == "/matches":
-            date_str = qs.get("date", [datetime.date.today().isoformat()])[0]
+            date_str = qs.get("date", [local_time.local_today().isoformat()])[0]
 
             conn = sqlite3.connect(DB_PATH)
-            result = matching.match_day(conn, date_str)
-            conn.close()
+
+            try:
+                result = matching.match_day(conn, date_str)
+
+            except ValueError:
+                self._send(
+                    400,
+                    json.dumps({"error": "date must be YYYY-MM-DD"}),
+                    "application/json",
+                )
+
+                return
+
+            finally:
+                conn.close()
 
             self._send(
                 200,
@@ -368,12 +381,19 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/get":
             if date_str := qs.get("date", [None])[0]:
-                rows = fetch_recent(date=date_str)
+                try:
+                    rows = fetch_recent(date=date_str)
+
+                except ValueError:
+                    self._send(
+                        400,
+                        json.dumps({"error": "date must be YYYY-MM-DD"}),
+                        "application/json",
+                    )
+
+                    return
             elif qs.get("today"):
-                now = datetime.datetime.now()
-                midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                seconds_int = (now - midnight).total_seconds()
-                rows = fetch_recent(seconds=seconds_int)
+                rows = fetch_recent(date=local_time.local_today())
             else:
                 seconds = qs.get(
                     "seconds",
@@ -600,7 +620,7 @@ class Handler(BaseHTTPRequestHandler):
             "    if (!utcString) return '';"
             "    const date = new Date(utcString + 'Z');"
             "    const options = {"
-            "        timeZone: 'America/New_York',"
+            "        timeZone: 'America/Indiana/Indianapolis',"
             "        year: 'numeric',"
             "        month: '2-digit',"
             "        day: '2-digit',"
@@ -664,11 +684,9 @@ class Handler(BaseHTTPRequestHandler):
             "if (page === 'report') {"
             "    const dateInput = document.getElementById('report-date');"
             "    const exportBtn = document.getElementById('export-btn');"
-            "    const today = new Date();"
-            "    const yyyy = today.getFullYear();"
-            "    const mm = String(today.getMonth() + 1).padStart(2, '0');"
-            "    const dd = String(today.getDate()).padStart(2, '0');"
-            "    dateInput.value = `${yyyy}-${mm}-${dd}`;"
+            "    dateInput.value = new Intl.DateTimeFormat('en-CA', {"
+            "        timeZone: 'America/Indiana/Indianapolis'"
+            "    }).format(new Date());"
             "    dateInput.addEventListener('change', () => {"
             "        updateTables(`/get?date=${dateInput.value}`);"
             "    });"

@@ -9,6 +9,8 @@ import sqlite3
 import serial
 from evdev import InputDevice, ecodes
 
+import local_time
+
 # ============================================================
 # Configuration
 # ============================================================
@@ -99,16 +101,18 @@ db.commit()
 
 def get_next_order_of_slaughter(station_name):
     """
-    Get the next order number for a given station for the current day.
+    Get the next order number for a given station for the current
+    Indiana day.
     """
+    start, end = local_time.utc_bounds(local_time.local_today())
     cursor = db.cursor()
     cursor.execute(
         """
         SELECT MAX(order_of_slaughter)
         FROM measurements
-        WHERE station = ? AND DATE(recorded_at) = DATE('now', 'localtime')
+        WHERE station = ? AND recorded_at >= ? AND recorded_at < ?
         """,
-        (station_name.lower(),),
+        (station_name.lower(), start, end),
     )
     max_order = cursor.fetchone()[0]
     if max_order is None:
@@ -119,16 +123,17 @@ def get_next_order_of_slaughter(station_name):
 def get_first_order_of_slaughter(station_name, scan_code):
     """
     Get the order number a scan code was first given at a station
-    for the current day, or None if it has not been weighed yet.
+    for the current Indiana day, or None if it has not been weighed yet.
     """
+    start, end = local_time.utc_bounds(local_time.local_today())
     cursor = db.cursor()
     cursor.execute(
         """
         SELECT MIN(order_of_slaughter)
         FROM measurements
-        WHERE station = ? AND scan_code = ? AND DATE(recorded_at) = DATE('now', 'localtime')
+        WHERE station = ? AND scan_code = ? AND recorded_at >= ? AND recorded_at < ?
         """,
-        (station_name.lower(), scan_code),
+        (station_name.lower(), scan_code, start, end),
     )
     return cursor.fetchone()[0]
 
