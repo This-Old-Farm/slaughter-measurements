@@ -13,6 +13,8 @@ Every weight stays in the database. Matching uses the most recent
 weight for each code and flags anything weighed more than once for QA.
 """
 
+import local_time
+
 HANG_TAGS_PER_SPECIES = {
     "BEEF": 2,
     "PORK": 2,
@@ -26,12 +28,14 @@ DEFAULT_HANG_TAGS = 2
 
 def load_scans(conn, station, date):
     """
-    Return one dict per scan code weighed at a station on a date
-    (YYYY-MM-DD), in the order each code was first scanned.
+    Return one dict per scan code weighed at a station on an Indiana
+    date (YYYY-MM-DD), in the order each code was first scanned.
 
     Measurements without a scan code were recorded before scan codes
     existed and cannot be matched, so they are left out.
     """
+    start, end = local_time.utc_bounds(date)
+
     rows = conn.execute(
         """
         SELECT
@@ -44,10 +48,11 @@ def load_scans(conn, station, date):
             d.over_30_months
         FROM measurements m
         LEFT JOIN animal_details d ON d.measurement_id = m.id
-        WHERE m.station = ? AND m.scan_code != '' AND DATE(m.recorded_at) = ?
+        WHERE m.station = ? AND m.scan_code != ''
+            AND m.recorded_at >= ? AND m.recorded_at < ?
         ORDER BY m.id
         """,
-        (station, date),
+        (station, start, end),
     ).fetchall()
 
     scans = {}
@@ -137,7 +142,7 @@ def match(live_scans, hang_scans):
 
 def match_day(conn, date):
     """
-    Match every live and hang scan recorded on a date (YYYY-MM-DD).
+    Match every live and hang scan recorded on an Indiana date (YYYY-MM-DD).
     """
     return match(
         load_scans(conn, "live", date),

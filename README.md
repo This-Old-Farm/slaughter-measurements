@@ -91,6 +91,8 @@ Measurements are timestamped with the system clock, so accurate time matters. NT
 timedatectl
 ```
 
+Timestamps are stored in UTC. Pages, reports, and "today" use Indiana time (`America/Indiana/Indianapolis`, see `local_time.py`) regardless of the computer's time zone setting, which needs the `tzdata` package (installed on Ubuntu by default).
+
 Expect `NTP: active` and `System clock synchronized: yes`. If not, enable it:
 
 ``` bash

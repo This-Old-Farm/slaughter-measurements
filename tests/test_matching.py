@@ -49,11 +49,11 @@ class MatchDayTest(unittest.TestCase):
             (cursor.lastrowid, animal_id, species, sex, int(over_30_months)),
         )
 
-    def hang(self, tag, weight, date=DATE):
+    def hang(self, tag, weight, date=DATE, time="12:00:00"):
         self.conn.execute(
             "INSERT INTO measurements (order_of_slaughter, scan_code, station, weight, recorded_at)"
             " VALUES (0, ?, 'hang', ?, ?)",
-            (tag, weight, f"{date} 12:00:00"),
+            (tag, weight, f"{date} {time}"),
         )
 
     def test_pairs_animals_with_tags_in_scan_order(self):
@@ -125,6 +125,18 @@ class MatchDayTest(unittest.TestCase):
         self.hang("T0", 59, date="2026-10-19")
         self.hang("", 70)
         self.hang("T1", 60)
+
+        result = matching.match_day(self.conn, DATE)
+
+        self.assertEqual([s["scan_code"] for s in result["animals"][0]["hang"]], ["T1"])
+        self.assertEqual(result["unmatched_hang"], [])
+
+    def test_day_follows_indiana_time_not_utc(self):
+        self.live("77L", "LAMB", "Lamb", 120)
+        # 11:30 PM on Oct 19 in Indiana, stored as the 20th in UTC.
+        self.hang("T0", 59, date="2026-10-20", time="03:30:00")
+        # 8:30 PM on Oct 20 in Indiana, stored as the 21st in UTC.
+        self.hang("T1", 60, date="2026-10-21", time="00:30:00")
 
         result = matching.match_day(self.conn, DATE)
 
