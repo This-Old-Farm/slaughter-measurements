@@ -116,6 +116,23 @@ def get_next_order_of_slaughter(station_name):
     return max_order + 1
 
 
+def get_first_order_of_slaughter(station_name, scan_code):
+    """
+    Get the order number a scan code was first given at a station
+    for the current day, or None if it has not been weighed yet.
+    """
+    cursor = db.cursor()
+    cursor.execute(
+        """
+        SELECT MIN(order_of_slaughter)
+        FROM measurements
+        WHERE station = ? AND scan_code = ? AND DATE(recorded_at) = DATE('now', 'localtime')
+        """,
+        (station_name.lower(), scan_code),
+    )
+    return cursor.fetchone()[0]
+
+
 # ============================================================
 # Barcode character mapping
 # ============================================================
@@ -332,7 +349,20 @@ class Station:
         # Round to the nearest integer
         weight = round(weight)
 
-        order_of_slaughter = get_next_order_of_slaughter(self.name)
+        # A code that was already weighed today is a reweigh and
+        # keeps its original place in the order. Every weight is
+        # kept; matching uses the most recent one.
+        order_of_slaughter = get_first_order_of_slaughter(self.name, self.scan_code)
+
+        if order_of_slaughter is None:
+            order_of_slaughter = get_next_order_of_slaughter(self.name)
+        else:
+            log.warning(
+                "%s: REWEIGH: %s keeps order %d.",
+                self.name,
+                self.scan_code,
+                order_of_slaughter,
+            )
 
         cursor = db.execute(
             """
