@@ -60,7 +60,7 @@ class MatchDayTest(unittest.TestCase):
         self.live("1234B", "BEEF", "Steer", 1250, over_30_months=True)
         self.live("77L", "LAMB", "Lamb", 120)
         self.live("88P", "PORK", "Gilt", 280)
-        for tag, weight in [("T9", 400), ("T2", 405), ("T5", 60), ("T1", 110), ("T7", 112)]:
+        for tag, weight in [("T9", 400), ("T2", 405), ("T5", 60), ("T1", 100), ("T7", 102)]:
             self.hang(tag, weight)
 
         result = matching.match_day(self.conn, DATE)
@@ -142,6 +142,91 @@ class MatchDayTest(unittest.TestCase):
 
         self.assertEqual([s["scan_code"] for s in result["animals"][0]["hang"]], ["T1"])
         self.assertEqual(result["unmatched_hang"], [])
+
+    def test_failed_capture_then_reweigh_uses_valid_weight(self):
+        self.live("1234B", "BEEF", "Steer", 1250)
+        self.hang("T1", -2)
+        self.hang("T1", 402)
+        self.hang("T2", 405)
+
+        animal = matching.match_day(self.conn, DATE)["animals"][0]
+
+        self.assertEqual(animal["hang"][0]["weights"], [-2, 402])
+        self.assertEqual(animal["hang"][0]["weight"], 402)
+        self.assertEqual(animal["checks"]["yield"]["verdict"], "ok")
+        self.assertEqual(animal["qa"], ["hang tag T1 reweighed 2 times"])
+
+    def test_only_failed_capture_keeps_order_and_flags_qa(self):
+        self.live("1234B", "BEEF", "Steer", 1250)
+        self.live("1235B", "BEEF", "Cow", 1300)
+        self.hang("T1", 0)
+        self.hang("T2", 405)
+        self.hang("T3", 410)
+        self.hang("T4", 415)
+
+        first, second = matching.match_day(self.conn, DATE)["animals"]
+
+        self.assertIsNone(first["hang"][0]["weight"])
+        self.assertEqual(first["qa"], ["hang tag T1 has no valid weight"])
+        self.assertEqual(first["checks"]["yield"]["verdict"], "unknown")
+        self.assertEqual(first["checks"]["balance"]["verdict"], "unknown")
+        self.assertEqual([s["scan_code"] for s in second["hang"]], ["T3", "T4"])
+        self.assertEqual(second["qa"], [])
+
+    def test_failed_live_capture_flags_qa(self):
+        self.live("1234B", "BEEF", "Steer", -6)
+        self.hang("T1", 400)
+        self.hang("T2", 405)
+
+        animal = matching.match_day(self.conn, DATE)["animals"][0]
+
+        self.assertIsNone(animal["live"]["weight"])
+        self.assertEqual(animal["qa"], ["live has no valid weight"])
+        self.assertEqual(animal["checks"]["yield"]["verdict"], "unknown")
+
+    def test_implausible_yield_flags_qa(self):
+        # Halves from a much smaller animal: a missed or extra hang scan
+        # earlier in the day shifts every later pairing like this.
+        self.live("1234B", "BEEF", "Steer", 1250)
+        self.hang("T1", 200)
+        self.hang("T2", 195)
+
+        animal = matching.match_day(self.conn, DATE)["animals"][0]
+
+        self.assertEqual(animal["checks"]["yield"]["percent"], 31.6)
+        self.assertEqual(animal["checks"]["yield"]["verdict"], "warn")
+        self.assertEqual(animal["qa"], ["yield 31.6% outside 52-67% for BEEF"])
+
+    def test_uneven_halves_flag_qa(self):
+        # Plausible total, but the halves belong to two different animals.
+        self.live("1234B", "BEEF", "Steer", 1250)
+        self.hang("T1", 450)
+        self.hang("T2", 360)
+
+        animal = matching.match_day(self.conn, DATE)["animals"][0]
+
+        self.assertEqual(animal["checks"]["yield"]["verdict"], "ok")
+        self.assertEqual(animal["checks"]["balance"]["difference_percent"], 22.2)
+        self.assertEqual(animal["checks"]["balance"]["verdict"], "warn")
+        self.assertEqual(animal["qa"], ["halves differ by 22.2% (limit 15%)"])
+
+    def test_lamb_has_yield_but_no_balance_check(self):
+        self.live("77L", "LAMB", "Lamb", 120)
+        self.hang("T1", 60)
+
+        animal = matching.match_day(self.conn, DATE)["animals"][0]
+
+        self.assertEqual(animal["checks"]["yield"]["verdict"], "ok")
+        self.assertIsNone(animal["checks"]["balance"])
+
+    def test_incomplete_animal_is_not_checked_yet(self):
+        self.live("1234B", "BEEF", "Steer", 1250)
+        self.hang("T1", 200)
+
+        animal = matching.match_day(self.conn, DATE)["animals"][0]
+
+        self.assertEqual(animal["checks"], {"yield": None, "balance": None})
+        self.assertEqual(animal["qa"], [])
 
     def test_missing_species_assumes_two_tags_and_flags_qa(self):
         self.conn.execute(
