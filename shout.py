@@ -12,6 +12,10 @@ Endpoints:
         N defaults to 43200 seconds (12 hours)
         and must be a non-negative integer.
 
+    GET /matches[?date=YYYY-MM-DD]
+        JSON of live animals matched to hang tags for a day
+        (default today), with QA flags. See matching.py.
+
 Environment:
     DB_PATH
         SQLite database.
@@ -30,6 +34,8 @@ import os
 import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+
+import matching
 
 # ============================================================
 # Configuration
@@ -330,6 +336,28 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 "Measurement inserted.",
                 "text/plain",
+            )
+
+            return
+
+        # ====================================================
+        # Matched animals
+        # ====================================================
+
+        if parsed.path == "/matches":
+            date_str = qs.get("date", [datetime.date.today().isoformat()])[0]
+
+            conn = sqlite3.connect(DB_PATH)
+            result = matching.match_day(conn, date_str)
+            conn.close()
+
+            self._send(
+                200,
+                json.dumps(
+                    result,
+                    indent=2,
+                ),
+                "application/json",
             )
 
             return

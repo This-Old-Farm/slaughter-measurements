@@ -7,6 +7,23 @@ Configuring a computer that currently has only one job: reliably collecting and 
 `shout.py` starts a simple http server to share the measurements
 - http://localhost/test displays the table
 - http://localhost/get?seconds=N is an api which accepts an integer number of seconds, and returns json for all measurements taken in the most recent N seconds
+- http://localhost/matches?date=YYYY-MM-DD returns json pairing each live animal with its hang tags for a day (default today), with QA flags
+
+## Scan Process
+
+**Live station:** scan the animal ID (ends in `B`, `P`, or `L` for beef, pork, or lamb), its sex/type code, and `PLUS30` for beef over 30 months, then weigh.
+
+**Hang station:** put a half carcass on the scale and scan any unused hang tag. The first stable weight is saved with that tag.
+
+Scanning a code that was already weighed today records a reweigh: the new weight is saved and the code keeps its original place in the order.
+
+`matching.py` pairs the nth live animal with the next hang tags in first-scan order (two for beef and pork, one for lamb). It uses each code's most recent weight and flags reweighs for QA. It is a prototype that may move to lapis.
+
+Run its tests with:
+
+``` bash
+python3 -m unittest
+```
 
 ## Current Hardware Setup
 
