@@ -64,12 +64,21 @@ db.execute("""
     CREATE TABLE IF NOT EXISTS measurements (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_of_slaughter INTEGER NOT NULL,
-        barcode_buffer TEXT NOT NULL,
+        scan_code TEXT NOT NULL DEFAULT '',
         station TEXT NOT NULL,
         weight REAL NOT NULL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """)
+
+# Databases created before scan_code existed need the column added.
+# barcode_buffer was its name on main before it was ever deployed.
+measurement_columns = {row[1] for row in db.execute("PRAGMA table_info(measurements)")}
+
+if "barcode_buffer" in measurement_columns:
+    db.execute("ALTER TABLE measurements RENAME COLUMN barcode_buffer TO scan_code")
+elif "scan_code" not in measurement_columns:
+    db.execute("ALTER TABLE measurements ADD COLUMN scan_code TEXT NOT NULL DEFAULT ''")
 
 db.execute(
     """
@@ -327,7 +336,7 @@ class Station:
         cursor = db.execute(
             """
             INSERT INTO measurements
-                (order_of_slaughter, barcode_buffer, station, weight)
+                (order_of_slaughter, scan_code, station, weight)
             VALUES
                 (?, ?, ?, ?)
             """,
