@@ -54,8 +54,9 @@ HALF_IMBALANCE_LIMIT = 15.0
 
 def capture_failed(weight):
     """
-    Whether a reading is the scale reporting a failure rather than a
-    weight. The scales write 0, -2, and -6 when a capture doesn't settle.
+    Whether a reading has no carcass weight in it. A zero or negative
+    reading means the scale was empty or hadn't settled when the code
+    was scanned. Values seen so far: 0, -1, -2, -5, -5.5, -6, and -8.
     """
     return weight <= 0
 
