@@ -148,6 +148,7 @@ def load_sequences(conn, start, end, weights):
     rows = conn.execute(
         """
         SELECT
+            id,
             measurement_id,
             animal_id,
             species,
@@ -168,6 +169,7 @@ def load_sequences(conn, start, end, weights):
     sequences = []
 
     for (
+        sequence_id,
         measurement_id,
         animal_id,
         species,
@@ -194,6 +196,7 @@ def load_sequences(conn, start, end, weights):
 
         sequences.append(
             {
+                "id": sequence_id,
                 "entry": entries[animal_id],
                 "animal_id": animal_id,
                 "species": species,

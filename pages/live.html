@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Station Pages</title>
+<style>
+  :root {
+    --bar: #20262e;
+    --bar-text: #f2f2f2;
+    --muted: #a8b0ba;
+    --accent: #f5b700;
+    --panel: #ffffff;
+    --text: #1a1a1a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    font: 16px system-ui, sans-serif;
+    background: var(--panel);
+    color: var(--text);
+  }
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em 1.5em;
+    padding: 0.5em 1em;
+    background: var(--bar);
+    color: var(--bar-text);
+  }
+  .bar strong { margin-right: 0.5em; }
+  .group { display: flex; align-items: center; gap: 0.4em; }
+  .group > span { color: var(--muted); }
+  button {
+    font: inherit;
+    padding: 0.3em 0.8em;
+    border: 1px solid #4a5361;
+    border-radius: 6px;
+    background: #2e3640;
+    color: var(--bar-text);
+    cursor: pointer;
+  }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 700; }
+  label { display: flex; align-items: center; gap: 0.3em; cursor: pointer; }
+  #guide {
+    display: none;
+    padding: 0.8em 1.2em;
+    border-bottom: 1px solid #ddd;
+    line-height: 1.45;
+  }
+  #guide.show { display: block; }
+  #guide h2 { font-size: 1em; margin: 0.2em 0 0.4em; }
+  #guide ol, #guide ul { margin: 0 0 0.6em; padding-left: 1.4em; }
+  #guide code { background: #f0f0f0; padding: 0 0.25em; border-radius: 3px; }
+  #guide .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0 2em; }
+  iframe { flex: 1; width: 100%; border: 0; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <strong>Live station</strong>
+  <div class="group" id="versions">
+    <span>Version</span>
+    <button data-version="a" title="The next step in huge type">A - Next scan</button>
+    <button data-version="b" title="The steps as a checklist beside today's animals">B - Checklist</button>
+    <button data-version="c" title="One colored tile per step">C - Tiles</button>
+  </div>
+  <div class="group">
+    <span>Show</span>
+    <label><input type="checkbox" data-part="table" checked> Today's animals</label>
+    <label><input type="checkbox" data-part="hints" checked> Barcode names</label>
+    <label><input type="checkbox" data-part="flags" checked> Flags</label>
+  </div>
+  <button id="guide-button" aria-pressed="false">Guide</button>
+</div>
+
+<div id="guide">
+  <div class="columns">
+    <div>
+      <h2>Live station</h2>
+      <ol>
+        <li>Scan the animal ID (ends in <code>B</code>, <code>P</code> or <code>L</code>). The weight is captured on its own.</li>
+        <li>Scan each step the screen asks for, in order: firearm, dirty (beef, lamb), +30 months and dairy (beef), then sex/type. Scan the "no" barcode too.</li>
+        <li>Wrong scan? Scan the animal ID again and redo the steps. Both are kept, and the more complete one is used.</li>
+        <li>"No valid weight"? Scan the animal ID again to reweigh.</li>
+      </ol>
+    </div>
+    <div>
+      <h2>Hang station</h2>
+      <ol>
+        <li>Put the half carcass on the scale, then scan any unused hang tag.</li>
+        <li>A bad weight can be fixed later: bring the carcass back and scan the same tag.</li>
+      </ol>
+      <h2>Trying the versions</h2>
+      <p>The three versions show the same thing laid out differently. Switch between them and turn parts off to see what the operator actually uses. Once a version is picked, the others are deleted (#62).</p>
+    </div>
+  </div>
+</div>
+
+<iframe id="view" title="Live station page"></iframe>
+
+<script>
+// Remembered on this screen only, so each station keeps its own choice.
+function load(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : JSON.parse(value);
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function save(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    // Private windows and blocked storage just don't remember.
+  }
+}
+
+const settings = {
+  version: load('live.version', 'a'),
+  hidden: load('live.hidden', []),
+  guide: load('live.guide', true),
+};
+
+const versionButtons = document.querySelectorAll('#versions button');
+const partBoxes = document.querySelectorAll('input[data-part]');
+const guideButton = document.getElementById('guide-button');
+
+function apply() {
+  versionButtons.forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.version === settings.version));
+  });
+
+  partBoxes.forEach(box => { box.checked = !settings.hidden.includes(box.dataset.part); });
+
+  guideButton.setAttribute('aria-pressed', String(settings.guide));
+  document.getElementById('guide').className = settings.guide ? 'show' : '';
+
+  const hide = settings.hidden.length ? `?hide=${settings.hidden.join(',')}` : '';
+  const src = `/live/${settings.version}${hide}`;
+  const view = document.getElementById('view');
+
+  if (view.getAttribute('src') !== src) view.setAttribute('src', src);
+
+  save('live.version', settings.version);
+  save('live.hidden', settings.hidden);
+  save('live.guide', settings.guide);
+}
+
+versionButtons.forEach(button => button.addEventListener('click', () => {
+  settings.version = button.dataset.version;
+  apply();
+}));
+
+partBoxes.forEach(box => box.addEventListener('change', () => {
+  settings.hidden = [...partBoxes].filter(b => !b.checked).map(b => b.dataset.part);
+  apply();
+}));
+
+guideButton.addEventListener('click', () => {
+  settings.guide = !settings.guide;
+  apply();
+});
+
+apply();
+</script>
+</body>
+</html>

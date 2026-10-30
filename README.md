@@ -8,6 +8,7 @@ Configuring a computer that currently has only one job: reliably collecting and 
 - http://localhost/test displays the table
 - http://localhost/get?seconds=N is an api which accepts an integer number of seconds, and returns json for all measurements taken in the most recent N seconds
 - http://localhost/matches?date=YYYY-MM-DD returns json pairing each live animal with its hang tags for a day (default today), with QA flags
+- http://localhost/live is for trying the three candidate live-station pages (`/live/a`, `/live/b`, `/live/c`), which show the animal being scanned, what's left to scan for it, and today's live animals. It has a short guide to the scan process, buttons to switch versions, and switches to hide the animals table, barcode names, or flags column. The operator picks one version and the others are deleted (#62)
 
 ## Scan Process
 

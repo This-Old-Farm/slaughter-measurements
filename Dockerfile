@@ -17,6 +17,8 @@ COPY local_time.py /usr/local/bin/local_time.py
 COPY matching.py   /usr/local/bin/matching.py
 COPY scan_sequence.py /usr/local/bin/scan_sequence.py
 COPY schema.py /usr/local/bin/schema.py
+COPY live_status.py /usr/local/bin/live_status.py
+COPY pages /usr/local/bin/pages
 
 RUN chmod +x /usr/local/bin/listen-slaughter-measurements \
              /usr/local/bin/shout-slaughter-measurements \
