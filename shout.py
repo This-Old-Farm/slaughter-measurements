@@ -37,6 +37,7 @@ from urllib.parse import parse_qs, urlparse
 
 import local_time
 import matching
+import schema
 
 # ============================================================
 # Configuration
@@ -70,29 +71,7 @@ if db_dir:
 
 db_init = sqlite3.connect(DB_PATH)
 
-db_init.execute(
-    """
-    CREATE TABLE IF NOT EXISTS measurements (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        order_of_slaughter INTEGER NOT NULL,
-        scan_code TEXT NOT NULL DEFAULT '',
-        station TEXT NOT NULL,
-        weight REAL NOT NULL,
-        recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-    """
-)
-
-# Databases created before scan_code existed need the column added.
-# barcode_buffer was its name on main before it was ever deployed.
-measurement_columns = {row[1] for row in db_init.execute("PRAGMA table_info(measurements)")}
-
-if "barcode_buffer" in measurement_columns:
-    db_init.execute("ALTER TABLE measurements RENAME COLUMN barcode_buffer TO scan_code")
-elif "scan_code" not in measurement_columns:
-    db_init.execute("ALTER TABLE measurements ADD COLUMN scan_code TEXT NOT NULL DEFAULT ''")
-
-db_init.commit()
+schema.init(db_init)
 db_init.close()
 
 
