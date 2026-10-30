@@ -24,6 +24,7 @@
   }
   #offline { display: none; background: var(--warn); color: #fff; text-align: center; padding: 0.4em; font-weight: 700; margin: -1em -1em 1em; }
   #offline.show { display: block; }
+  .hide-table #today, .hide-flags .flagcol { display: none; }
   #headline { display: flex; align-items: baseline; gap: 0.8em; flex-wrap: wrap; margin-bottom: 0.6em; }
   #animal { font-size: 2em; font-weight: 800; }
   #meta { color: var(--muted); }
@@ -70,12 +71,16 @@
 </div>
 <div id="tiles"></div>
 <div id="status"></div>
-<table>
+<table id="today">
   <thead id="animals-head"></thead>
   <tbody id="animals"></tbody>
 </table>
 <script>
 const $ = id => document.getElementById(id);
+
+// Parts /live can switch off, e.g. ?hide=table,hints,flags
+const HIDE = new Set((new URLSearchParams(location.search).get('hide') || '').split(','));
+HIDE.forEach(part => { if (part) document.body.classList.add(`hide-${part}`); });
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -102,7 +107,7 @@ function answerCell(animal, step) {
 function renderHead(head, steps) {
   const row = el('tr');
   ['#', 'Animal', 'Weight', ...steps.map(s => s.label), 'Flags'].forEach(label => {
-    row.appendChild(el('th', '', label));
+    row.appendChild(el('th', label === 'Flags' ? 'flagcol' : '', label));
   });
   head.replaceChildren(row);
 }
@@ -113,7 +118,7 @@ function animalRow(a, steps, className) {
   row.appendChild(el('td', '', a.animal_id));
   row.appendChild(el('td', '', a.weight !== null ? `${Math.round(a.weight)} lb` : '-'));
   steps.forEach(s => row.appendChild(answerCell(a, s.step)));
-  row.appendChild(el('td', a.qa.length ? 'flag' : '', a.qa.join('; ')));
+  row.appendChild(el('td', a.qa.length ? 'flag flagcol' : 'flagcol', a.qa.join('; ')));
   return row;
 }
 
@@ -159,7 +164,7 @@ function render(status) {
         const codes = s.codes
           .map(c => typeof c.value === 'boolean' ? c.code : `${c.code} ${c.value}`)
           .join(' / ');
-        tiles.appendChild(tile(s.label, 'Scan', codes, 'next'));
+        tiles.appendChild(tile(s.label, 'Scan', HIDE.has('hints') ? '' : codes, 'next'));
       } else {
         tiles.appendChild(tile(s.label, '-', '', ''));
       }

@@ -65,6 +65,7 @@
   footer td.yes { color: var(--next); font-weight: 700; }
   #offline { display: none; background: var(--warn); color: #000; text-align: center; padding: 0.4em; font-weight: 700; }
   #offline.show { display: block; }
+  .hide-table footer, .hide-flags .flagcol, .hide-hints #codes { display: none; }
 </style>
 </head>
 <body>
@@ -85,6 +86,10 @@
 </footer>
 <script>
 const $ = id => document.getElementById(id);
+
+// Parts /live can switch off, e.g. ?hide=table,hints,flags
+const HIDE = new Set((new URLSearchParams(location.search).get('hide') || '').split(','));
+HIDE.forEach(part => { if (part) document.body.classList.add(`hide-${part}`); });
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -111,7 +116,7 @@ function answerCell(animal, step) {
 function renderHead(head, steps) {
   const row = el('tr');
   ['#', 'Animal', 'Weight', ...steps.map(s => s.label), 'Flags'].forEach(label => {
-    row.appendChild(el('th', '', label));
+    row.appendChild(el('th', label === 'Flags' ? 'flagcol' : '', label));
   });
   head.replaceChildren(row);
 }
@@ -122,7 +127,7 @@ function animalRow(a, steps, className) {
   row.appendChild(el('td', '', a.animal_id));
   row.appendChild(el('td', '', a.weight !== null ? `${Math.round(a.weight)} lb` : '-'));
   steps.forEach(s => row.appendChild(answerCell(a, s.step)));
-  row.appendChild(el('td', a.qa.length ? 'flag' : '', a.qa.join('; ')));
+  row.appendChild(el('td', a.qa.length ? 'flag flagcol' : 'flagcol', a.qa.join('; ')));
   return row;
 }
 
