@@ -10,6 +10,7 @@ import serial
 from evdev import InputDevice, ecodes
 
 import local_time
+import scan_sequence
 
 # ============================================================
 # Configuration
@@ -82,19 +83,48 @@ if "barcode_buffer" in measurement_columns:
 elif "scan_code" not in measurement_columns:
     db.execute("ALTER TABLE measurements ADD COLUMN scan_code TEXT NOT NULL DEFAULT ''")
 
-db.execute(
-    """
+# One row per scan sequence: each animal ID scan starts one, and a
+# rescan of the same ID starts another rather than changing the first.
+# measurement_id links the weight once it is saved, and stays NULL if
+# the animal is scanned again before a weight arrives. Answers stay
+# NULL until they are scanned.
+ANIMAL_DETAILS_SCHEMA = """
     CREATE TABLE IF NOT EXISTS animal_details (
-        measurement_id INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        measurement_id INTEGER UNIQUE,
         animal_id TEXT NOT NULL,
         species TEXT NOT NULL,
-        sex TEXT NOT NULL,
-        over_30_months INTEGER NOT NULL DEFAULT 0,
+        firearm INTEGER,
+        dirty INTEGER,
+        over_30_months INTEGER,
+        dairy INTEGER,
+        sex TEXT,
+        recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (measurement_id)
             REFERENCES measurements(id)
     )
     """
-)
+
+# Databases created before #61 keyed details by measurement and
+# required sex. SQLite can't change either in place, so rebuild the
+# table. Old rows started when their weight was saved.
+detail_columns = {row[1] for row in db.execute("PRAGMA table_info(animal_details)")}
+
+if "id" not in detail_columns and detail_columns:
+    with db:
+        db.execute("ALTER TABLE animal_details RENAME TO animal_details_before_61")
+        db.execute(ANIMAL_DETAILS_SCHEMA)
+        db.execute("""
+            INSERT INTO animal_details
+                (id, measurement_id, animal_id, species, over_30_months, sex, recorded_at)
+            SELECT d.measurement_id, d.measurement_id, d.animal_id, d.species,
+                d.over_30_months, d.sex, m.recorded_at
+            FROM animal_details_before_61 d
+            JOIN measurements m ON m.id = d.measurement_id
+            """)
+        db.execute("DROP TABLE animal_details_before_61")
+
+db.execute(ANIMAL_DETAILS_SCHEMA)
 
 db.commit()
 
@@ -180,27 +210,6 @@ KEY_MAP = {
     "KEY_Y": "Y",
     "KEY_Z": "Z",
     "KEY_MINUS": "-",
-}
-
-SEX_CODES = {
-    "BEEF": {
-        "D": "Dairy",
-        "B": "Bull",
-        "H": "Heifer",
-        "S": "Steer",
-        "C": "Cow",
-    },
-    "PORK": {
-        "B": "Barrow",
-        "G": "Gilt",
-        "BO": "Boar",
-        "S": "Sow",
-    },
-    "LAMB": {
-        "L": "Lamb",
-        "G": "Goat",
-        "M": "Mutton",
-    },
 }
 
 
@@ -431,198 +440,184 @@ class Station:
 
 
 class LiveStation(Station):
+    NEXT_SCAN_PROMPT = "Finish this animal's scans, or scan the next animal."
+
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
 
-        # Additional data collected only at the LIVE station.
-        self.species = None
-        self.sex = None
-        self.over_30_months = False
-
-    def get_species(self, animal_id):
-
-        if not animal_id:
-            return None
-
-        species_code = animal_id[-1].upper()
-
-        species_codes = {
-            "B": "BEEF",
-            "P": "PORK",
-            "L": "LAMB",
-        }
-
-        return species_codes.get(species_code)
+        # The scan sequence for the most recent animal ID, and its
+        # animal_details row. It stays after the weight is saved so
+        # the remaining scans can still be recorded.
+        self.sequence = None
+        self.sequence_id = None
 
     def handle_barcode(self, barcode):
 
         barcode = barcode.upper()
 
         # --------------------------------------------------------
-        # No animal pending: this barcode must be the animal ID.
+        # Next step for the current animal
         # --------------------------------------------------------
 
-        if self.scan_code is None:
-            species = self.get_species(barcode)
+        if self.sequence is not None:
+            step = self.sequence.answer(barcode)
 
-            if species is None:
+            if step is not None:
+                self.record_answer(step)
+
+                return
+
+        # --------------------------------------------------------
+        # Anything else must be the next animal ID.
+        # --------------------------------------------------------
+
+        species = scan_sequence.get_species(barcode)
+
+        if species is None:
+            if self.sequence is not None and self.sequence.next_step is not None:
+                log.warning(
+                    "%s: Barcode %s ignored - expected %s scan for %s.",
+                    self.name,
+                    barcode,
+                    self.sequence.next_step,
+                    self.sequence.animal_id,
+                )
+
+            else:
                 log.warning(
                     "%s: Invalid animal ID %s - expected ID ending in B, P, or L.",
                     self.name,
                     barcode,
                 )
 
-                return
-
-            self.scan_code = barcode
-            self.species = species
-            self.sex = None
-            self.over_30_months = False
-
-            log.info(
-                "%s: ANIMAL: %s (%s)",
-                self.name,
-                self.scan_code,
-                self.species,
-            )
-
-            log.info(
-                "%s: Waiting for sex/type scan...",
-                self.name,
-            )
-
             return
 
-        # --------------------------------------------------------
-        # Optional PLUS30 scan
-        # --------------------------------------------------------
+        self.start_animal(barcode, species)
 
-        if barcode == "PLUS30":
-            if self.species != "BEEF":
-                log.warning(
-                    "%s: PLUS30 is only valid for BEEF.",
-                    self.name,
-                )
+    def start_animal(self, animal_id, species):
 
-                return
+        previous = self.sequence
 
-            self.over_30_months = True
-
-            log.info(
-                "%s: +30 recorded for %s.",
-                self.name,
-                self.scan_code,
-            )
-
-            return
-
-        # Once sex/type has been recorded, the station is
-        # waiting for weight and should not accept another
-        # sex/type barcode for this animal. PLUS30 is still
-        # accepted above so it can be scanned in either order.
-        if self.sex is not None:
+        # The previous sequence is already saved. A rescan of the
+        # same ID is how an operator starts over after a wrong scan;
+        # matching decides which sequence to use.
+        if previous is not None and previous.animal_id == animal_id:
             log.warning(
-                "%s: Barcode %s ignored - waiting for weight for %s.",
+                "%s: %s rescanned%s - starting a new scan sequence. The earlier one is kept.",
                 self.name,
-                barcode,
+                animal_id,
+                " before its weight arrived" if self.scan_code is not None else "",
+            )
+
+        elif previous is not None and previous.missing():
+            log.warning(
+                "%s: %s left without %s scan(s).",
+                self.name,
+                previous.animal_id,
+                ", ".join(previous.missing()),
+            )
+
+        # A second animal ID before a weight means the first
+        # animal's weight was never captured.
+        if self.scan_code is not None and previous.animal_id != animal_id:
+            log.warning(
+                "%s: %s replaces %s, which was never weighed. Its scans are kept.",
+                self.name,
+                animal_id,
                 self.scan_code,
             )
 
-            return
+        # The animal ID alone starts weight collection.
+        self.scan_code = animal_id
+        self.sequence = scan_sequence.AnimalSequence(animal_id, species)
 
-        # --------------------------------------------------------
-        # Sex/type scan
-        # --------------------------------------------------------
+        cursor = db.execute(
+            "INSERT INTO animal_details (animal_id, species) VALUES (?, ?)",
+            (animal_id, species),
+        )
 
-        valid_codes = SEX_CODES[self.species]
+        db.commit()
 
-        if barcode not in valid_codes:
-            log.warning(
-                "%s: Invalid %s sex/type code: %s",
-                self.name,
-                self.species,
-                barcode,
-            )
-
-            return
-
-        self.sex = valid_codes[barcode]
+        self.sequence_id = cursor.lastrowid
 
         log.info(
-            "%s: SEX/TYPE: %s (%s)",
+            "%s: ANIMAL: %s (%s)",
             self.name,
-            barcode,
-            self.sex,
+            animal_id,
+            species,
         )
 
         log.info(
-            "%s: Waiting for weight...",
+            "%s: Waiting for weight and %s scan...",
             self.name,
+            self.sequence.next_step,
         )
+
+    def record_answer(self, step):
+
+        value = self.sequence.answers[step]
+
+        log.info(
+            "%s: %s: %s for %s.",
+            self.name,
+            step.upper(),
+            value,
+            self.sequence.animal_id,
+        )
+
+        # Each answer is written as it arrives so an unfinished
+        # sequence keeps what was scanned.
+        db.execute(
+            f"UPDATE animal_details SET {step} = ? WHERE id = ?",
+            (value, self.sequence_id),
+        )
+
+        db.commit()
+
+        if self.sequence.next_step is not None:
+            log.info(
+                "%s: Waiting for %s scan...",
+                self.name,
+                self.sequence.next_step,
+            )
+
+        else:
+            self.log_details()
 
     def save_measurement(self, weight):
 
-        # LIVE measurements require an animal ID and
-        # a completed sex/type scan.
         if self.scan_code is None:
             return
 
-        if self.sex is None:
-            return
-
-        # Preserve the metadata because the base save method
-        # clears scan_code after successfully saving the weight.
-        animal_id = self.scan_code
-        species = self.species
-        sex = self.sex
-        over_30_months = self.over_30_months
-
-        # Save the normal measurement first.
         measurement_id = super().save_measurement(weight)
 
         if measurement_id is None:
             return
 
-        # Store the additional LIVE animal information separately
-        # so the measurements table schema remains unchanged.
         db.execute(
-            """
-                INSERT INTO animal_details
-                        (
-                                measurement_id,
-                                animal_id,
-                                species,
-                                sex,
-                                over_30_months
-                        )
-                VALUES
-                        (?, ?, ?, ?, ?)
-                """,
-            (
-                measurement_id,
-                animal_id,
-                species,
-                sex,
-                int(over_30_months),
-            ),
+            "UPDATE animal_details SET measurement_id = ? WHERE id = ?",
+            (measurement_id, self.sequence_id),
         )
 
         db.commit()
 
-        log.info(
-            "%s: ANIMAL DETAILS: %s,%s,%s,+30=%s",
-            self.name,
-            animal_id,
-            species,
-            sex,
-            "YES" if over_30_months else "NO",
-        )
+        if self.sequence.next_step is not None:
+            log.info(
+                "%s: Waiting for %s scan...",
+                self.name,
+                self.sequence.next_step,
+            )
 
-        # Reset LIVE-only state for the next animal.
-        self.species = None
-        self.sex = None
-        self.over_30_months = False
+    def log_details(self):
+
+        log.info(
+            "%s: ANIMAL DETAILS: %s,%s,%s",
+            self.name,
+            self.sequence.animal_id,
+            self.sequence.species,
+            ",".join(f"{step}={value}" for step, value in self.sequence.answers.items()),
+        )
 
     def handle_scale(self):
 

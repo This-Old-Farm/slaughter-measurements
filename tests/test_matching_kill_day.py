@@ -32,11 +32,16 @@ def match_kill_day(tag_for_reading):
     conn.execute(
         """
         CREATE TABLE animal_details (
-            measurement_id INTEGER PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            measurement_id INTEGER UNIQUE,
             animal_id TEXT NOT NULL,
             species TEXT NOT NULL,
-            sex TEXT NOT NULL,
-            over_30_months INTEGER NOT NULL
+            firearm INTEGER,
+            dirty INTEGER,
+            over_30_months INTEGER,
+            dairy INTEGER,
+            sex TEXT,
+            recorded_at TEXT NOT NULL
         )
         """
     )
@@ -48,8 +53,10 @@ def match_kill_day(tag_for_reading):
             (row_id, order, animal_id, weight, recorded_at),
         )
         conn.execute(
-            "INSERT INTO animal_details VALUES (?, ?, 'BEEF', 'Steer', 0)",
-            (row_id, animal_id),
+            "INSERT INTO animal_details (measurement_id, animal_id, species, firearm, dirty,"
+            " over_30_months, dairy, sex, recorded_at)"
+            " VALUES (?, ?, 'BEEF', 0, 0, 0, 0, 'Steer', ?)",
+            (row_id, animal_id, recorded_at),
         )
 
     for row_id, reading, weight, recorded_at in HANG:

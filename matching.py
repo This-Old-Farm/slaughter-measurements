@@ -13,6 +13,10 @@ Every weight stays in the database. Matching uses the most recent
 valid weight for each code and flags anything weighed more than once
 for QA.
 
+Every live scan sequence stays in the database too. Matching takes an
+animal's details from its most complete sequence, the newest on a tie,
+and flags animals scanned more than once or missing a step.
+
 Each complete animal also gets two plausibility checks, carried over
 from the matching GUI prototype in This-Old-Farm/lapis#23, so a wrong
 pairing is visible rather than silently accepted:
@@ -23,6 +27,7 @@ pairing is visible rather than silently accepted:
 """
 
 import local_time
+import scan_sequence
 
 HANG_TAGS_PER_SPECIES = {
     "BEEF": 2,
@@ -61,9 +66,14 @@ def capture_failed(weight):
     return weight <= 0
 
 
+def yes_no(value):
+    """An animal_details yes/no column as True, False, or None."""
+    return None if value is None else bool(value)
+
+
 def load_scans(conn, station, date):
     """
-    Return one dict per scan code weighed at a station on an Indiana
+    Return one dict per scan code scanned at a station on an Indiana
     date (YYYY-MM-DD), in the order each code was first scanned.
 
     Measurements without a scan code were recorded before scan codes
@@ -73,61 +83,149 @@ def load_scans(conn, station, date):
 
     rows = conn.execute(
         """
-        SELECT
-            m.id,
-            m.scan_code,
-            m.weight,
-            m.recorded_at,
-            d.species,
-            d.sex,
-            d.over_30_months
-        FROM measurements m
-        LEFT JOIN animal_details d ON d.measurement_id = m.id
-        WHERE m.station = ? AND m.scan_code != ''
-            AND m.recorded_at >= ? AND m.recorded_at < ?
-        ORDER BY m.id
+        SELECT id, scan_code, weight, recorded_at
+        FROM measurements
+        WHERE station = ? AND scan_code != ''
+            AND recorded_at >= ? AND recorded_at < ?
+        ORDER BY id
         """,
         (station, start, end),
     ).fetchall()
 
     scans = {}
+    first_scanned = {}
+    weights = {}
 
-    for (
-        measurement_id,
-        scan_code,
-        weight,
-        recorded_at,
-        species,
-        sex,
-        over_30_months,
-    ) in rows:
-        scan = scans.setdefault(
-            scan_code,
-            {
-                "scan_code": scan_code,
-                "weights": [],
-            },
-        )
+    for measurement_id, scan_code, weight, recorded_at in rows:
+        scan = scans.setdefault(scan_code, new_scan(scan_code))
+        first_scanned.setdefault(scan_code, recorded_at)
+        weights[measurement_id] = weight
 
         # Rows arrive oldest first, so the last valid one wins. A
         # failed capture stays in the history but never becomes the
         # weight; a code with only failed captures keeps its place in
         # the order with no weight.
         scan["weights"].append(weight)
-        scan.setdefault("weight", None)
 
         if not capture_failed(weight):
             scan["weight"] = weight
             scan["measurement_id"] = measurement_id
             scan["recorded_at"] = recorded_at
 
-        if station == "live":
-            scan["species"] = species
-            scan["sex"] = sex
-            scan["over_30_months"] = bool(over_30_months)
+    if station == "live":
+        for sequence in load_sequences(conn, start, end, weights):
+            animal_id = sequence["animal_id"]
+            scans.setdefault(animal_id, new_scan(animal_id))
+            scans[animal_id]["sequences"].append(sequence)
 
-    # dicts keep insertion order, which is first-scan order.
-    return list(scans.values())
+            # An animal whose weight never arrived still holds its
+            # place in the order from when its ID was scanned.
+            first = first_scanned.setdefault(animal_id, sequence["recorded_at"])
+            first_scanned[animal_id] = min(first, sequence["recorded_at"])
+
+        for scan in scans.values():
+            use_best_sequence(scan)
+
+    # sorted() is stable, so codes first scanned in the same second
+    # keep the order they were read in.
+    return sorted(scans.values(), key=lambda scan: first_scanned[scan["scan_code"]])
+
+
+def new_scan(scan_code):
+    return {
+        "scan_code": scan_code,
+        "weights": [],
+        "weight": None,
+        "sequences": [],
+    }
+
+
+def load_sequences(conn, start, end, weights):
+    """
+    Every live scan sequence started in a UTC range, oldest first,
+    numbered per animal. weights maps measurement ids to weights.
+    """
+    rows = conn.execute(
+        """
+        SELECT
+            measurement_id,
+            animal_id,
+            species,
+            firearm,
+            dirty,
+            over_30_months,
+            dairy,
+            sex,
+            recorded_at
+        FROM animal_details
+        WHERE recorded_at >= ? AND recorded_at < ?
+        ORDER BY id
+        """,
+        (start, end),
+    ).fetchall()
+
+    entries = {}
+    sequences = []
+
+    for (
+        measurement_id,
+        animal_id,
+        species,
+        firearm,
+        dirty,
+        over_30_months,
+        dairy,
+        sex,
+        recorded_at,
+    ) in rows:
+        entries[animal_id] = entries.get(animal_id, 0) + 1
+
+        # None means the step wasn't scanned or doesn't apply to the
+        # species, which is different from a "no".
+        answers = {
+            "firearm": yes_no(firearm),
+            "dirty": yes_no(dirty),
+            "over_30_months": yes_no(over_30_months),
+            "dairy": yes_no(dairy),
+            "sex": sex,
+        }
+
+        steps = scan_sequence.STEPS.get(species, [])
+
+        sequences.append(
+            {
+                "entry": entries[animal_id],
+                "animal_id": animal_id,
+                "species": species,
+                **answers,
+                "missing": [step for step in steps if answers[step] is None],
+                "measurement_id": measurement_id,
+                "weight": weights.get(measurement_id),
+                "recorded_at": recorded_at,
+                "in_use": False,
+            }
+        )
+
+    return sequences
+
+
+def use_best_sequence(scan):
+    """
+    Take the animal's details from its most complete scan sequence.
+    A rescan is usually a correction, so the newer one wins a tie.
+    Every sequence stays in scan["sequences"].
+    """
+    best = None
+
+    if scan["sequences"]:
+        best = max(
+            scan["sequences"],
+            key=lambda sequence: (-len(sequence["missing"]), sequence["entry"]),
+        )
+        best["in_use"] = True
+
+    for field in ["species", *scan_sequence.YES_NO_CODES, "sex"]:
+        scan[field] = best[field] if best else None
 
 
 def check_yield(species, live_weight, hang_weights):
@@ -198,6 +296,17 @@ def match(live_scans, hang_scans):
         if live["weight"] is None:
             qa.append("live has no valid weight")
 
+        in_use = [sequence for sequence in live["sequences"] if sequence["in_use"]]
+
+        if len(live["sequences"]) > 1:
+            qa.append(
+                f"live scan sequence entered {len(live['sequences'])} times, "
+                f"using entry {in_use[0]['entry']}"
+            )
+
+        if in_use and in_use[0]["missing"]:
+            qa.append(f"live scan sequence missing {', '.join(in_use[0]['missing'])}")
+
         hang = hang_scans[hang_index : hang_index + tags_needed]
         hang_index += len(hang)
 
@@ -237,8 +346,11 @@ def match(live_scans, hang_scans):
                 "order": order,
                 "animal_id": live["scan_code"],
                 "species": live["species"],
-                "sex": live["sex"],
+                "firearm": live["firearm"],
+                "dirty": live["dirty"],
                 "over_30_months": live["over_30_months"],
+                "dairy": live["dairy"],
+                "sex": live["sex"],
                 "live": live,
                 "hang": hang,
                 "complete": complete,
