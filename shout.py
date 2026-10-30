@@ -21,6 +21,10 @@ Endpoints:
         GET /live_status: the animal being scanned now and today's
         live animals. See live_status.py.
 
+    GET, POST /practice
+        The fake scales' settings while practice.py is running, for
+        the practice panel on /live. Not found otherwise.
+
 Environment:
     DB_PATH
         SQLite database.
@@ -29,6 +33,10 @@ Environment:
     PORT
         TCP port to listen on.
         Default: 80
+
+    PRACTICE_CONTROL
+        Set by practice.py: the JSON file its fake scales read their
+        settings from. Unset outside practice.
 """
 
 import datetime
@@ -37,6 +45,7 @@ import json
 import math
 import os
 import sqlite3
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -62,6 +71,11 @@ PORT = int(
 )
 
 DEFAULT_SECONDS = 43200
+
+PRACTICE_CONTROL = os.environ.get("PRACTICE_CONTROL")
+
+# Requests are handled on threads; one practice update at a time.
+practice_lock = threading.Lock()
 
 # Static pages, read on each request so they can be edited in place.
 PAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pages")
@@ -204,6 +218,55 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     # --------------------------------------------------------
+    # Practice controls
+    # --------------------------------------------------------
+
+    def read_practice(self):
+        with open(PRACTICE_CONTROL, encoding="utf-8") as control:
+            return json.load(control)
+
+    def do_POST(self):
+
+        if urlparse(self.path).path != "/practice" or not PRACTICE_CONTROL:
+            self._send(404, "not found", "text/plain")
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            change = json.loads(self.rfile.read(length))
+
+            with practice_lock:
+                state = self.read_practice()
+
+                if "auto" in change:
+                    state["auto"] = bool(change["auto"])
+
+                # Each override gets a new number, so practice.py
+                # applies it exactly once.
+                if "station" in change:
+                    if change["station"] not in ("live", "hang"):
+                        raise ValueError("station must be live or hang")
+
+                    state["override"] = {
+                        "station": change["station"],
+                        "weight": float(change["weight"]),
+                    }
+                    state["seq"] += 1
+
+                temporary = PRACTICE_CONTROL + ".tmp"
+
+                with open(temporary, "w", encoding="utf-8") as control:
+                    json.dump(state, control)
+
+                os.replace(temporary, PRACTICE_CONTROL)
+
+        except (KeyError, TypeError, ValueError) as error:
+            self._send(400, json.dumps({"error": str(error)}), "application/json")
+            return
+
+        self._send(200, json.dumps(state), "application/json")
+
+    # --------------------------------------------------------
     # GET requests
     # --------------------------------------------------------
 
@@ -253,6 +316,18 @@ class Handler(BaseHTTPRequestHandler):
                     page.read(),
                     "text/html; charset=utf-8",
                 )
+
+            return
+
+        if parsed.path == "/practice":
+            if not PRACTICE_CONTROL:
+                self._send(404, "not found", "text/plain")
+                return
+
+            with practice_lock:
+                state = self.read_practice()
+
+            self._send(200, json.dumps(state), "application/json")
 
             return
 
