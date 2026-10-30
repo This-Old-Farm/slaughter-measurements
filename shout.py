@@ -37,6 +37,7 @@ from urllib.parse import parse_qs, urlparse
 
 import local_time
 import matching
+import schema
 
 # ============================================================
 # Configuration
@@ -70,29 +71,7 @@ if db_dir:
 
 db_init = sqlite3.connect(DB_PATH)
 
-db_init.execute(
-    """
-    CREATE TABLE IF NOT EXISTS measurements (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        order_of_slaughter INTEGER NOT NULL,
-        scan_code TEXT NOT NULL DEFAULT '',
-        station TEXT NOT NULL,
-        weight REAL NOT NULL,
-        recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-    """
-)
-
-# Databases created before scan_code existed need the column added.
-# barcode_buffer was its name on main before it was ever deployed.
-measurement_columns = {row[1] for row in db_init.execute("PRAGMA table_info(measurements)")}
-
-if "barcode_buffer" in measurement_columns:
-    db_init.execute("ALTER TABLE measurements RENAME COLUMN barcode_buffer TO scan_code")
-elif "scan_code" not in measurement_columns:
-    db_init.execute("ALTER TABLE measurements ADD COLUMN scan_code TEXT NOT NULL DEFAULT ''")
-
-db_init.commit()
+schema.init(db_init)
 db_init.close()
 
 
@@ -266,6 +245,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/clear_db":
             conn = sqlite3.connect(DB_PATH)
+            conn.execute("DELETE FROM animal_details")
             conn.execute("DELETE FROM measurements")
             conn.commit()
             conn.close()
@@ -476,7 +456,7 @@ class Handler(BaseHTTPRequestHandler):
             if last_live_time and current_time:
                 # In descending order, last_live_time is newer than current_time.
                 if (last_live_time - current_time).total_seconds() > 180:
-                    live_rows_list.append("<tr class='time-gap'><td colspan='3'></td></tr>")
+                    live_rows_list.append("<tr class='time-gap'><td colspan='4'></td></tr>")
 
             row_class = "even-row" if r["order_of_slaughter"] % 2 == 0 else ""
             live_rows_list.append(
@@ -484,6 +464,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"<td>{r['order_of_slaughter']}</td>"
                 f"<td>{int(round(r['weight']))}</td>"
                 f"<td>{html.escape(format_indiana_time(current_time))}</td>"
+                "<td></td>"
                 "</tr>"
             )
             if current_time:
@@ -568,6 +549,9 @@ class Handler(BaseHTTPRequestHandler):
             ".even-row, .row-pair-colored {"
             "background-color: #f9f9f9;"
             "}"
+            ".scan-flag td {"
+            "background-color: #fff3cd;"
+            "}"
             ".controls {"
             "margin-bottom: 2em;"
             "display: flex;"
@@ -587,6 +571,7 @@ class Handler(BaseHTTPRequestHandler):
             "<th>Order</th>"
             "<th>Weight</th>"
             "<th>Recorded At</th>"
+            "<th>Scans</th>"
             "</tr>"
             "<tbody id='live-table-body'>"
             f"{live_rows_html}"
@@ -631,15 +616,51 @@ class Handler(BaseHTTPRequestHandler):
             "    };"
             "    return new Intl.DateTimeFormat('en-US', options).format(date);"
             "}"
-            "function updateTables(url) {"
-            "    return fetch(url)"
-            "        .then(response => response.json())"
-            "        .then(data => {"
+            "function scanStatus(animalId, seq, count) {"
+            "    const parts = [];"
+            "    if (count > 1) parts.push(`entry ${seq.entry} of ${count}`);"
+            "    if (!seq.in_use) parts.push('not used');"
+            "    if (seq.measurement_id === null) parts.push('no weight');"
+            "    parts.push(seq.missing.length ? `missing ${seq.missing.join(', ')}` : 'complete');"
+            "    return `${animalId}: ${parts.join(', ')}`;"
+            "}"
+            "function liveScanRows(data, matches) {"
+            "    const statuses = {};"
+            "    const unweighed = [];"
+            "    matches.animals.forEach(animal => {"
+            "        const sequences = animal.live.sequences;"
+            "        sequences.forEach(seq => {"
+            "            const scans = {"
+            "                text: scanStatus(animal.animal_id, seq, sequences.length),"
+            "                flagged: !seq.in_use || seq.missing.length > 0,"
+            "            };"
+            "            if (seq.measurement_id === null) {"
+            "                unweighed.push({order_of_slaughter: '—', weight: '—',"
+            "                    recorded_at: seq.recorded_at, scans: scans});"
+            "            } else {"
+            "                statuses[seq.measurement_id] = scans;"
+            "            }"
+            "        });"
+            "    });"
+            "    return data"
+            "        .filter(r => r.station === 'live')"
+            "        .map(r => ({...r, scans: statuses[r.id] || null}))"
+            "        .concat(unweighed)"
+            "        .sort((a, b) => b.recorded_at.localeCompare(a.recorded_at));"
+            "}"
+            "function updateTables(url, matchesUrl) {"
+            "    return Promise.all(["
+            "        fetch(url).then(response => response.json()),"
+            "        fetch(matchesUrl)"
+            "            .then(response => response.json())"
+            "            .catch(() => ({animals: []})),"
+            "    ])"
+            "        .then(([data, matches]) => {"
             "            const liveTableBody = document.getElementById('live-table-body');"
             "            const hangTableBody = document.getElementById('hang-table-body');"
             "            liveTableBody.innerHTML = '';"
             "            hangTableBody.innerHTML = '';"
-            "            const liveRows = data.filter(r => r.station === 'live');"
+            "            const liveRows = liveScanRows(data, matches);"
             "            const hangRows = data.filter(r => r.station === 'hang');"
             "            let lastLiveTime = null;"
             "            liveRows.forEach(r => {"
@@ -647,14 +668,18 @@ class Handler(BaseHTTPRequestHandler):
             "                if (lastLiveTime && (lastLiveTime - currentTime) > 180000) {"
             "                    const gapRow = document.createElement('tr');"
             "                    gapRow.className = 'time-gap';"
-            "                    gapRow.innerHTML = `<td colspan='3'></td>`;"
+            "                    gapRow.innerHTML = `<td colspan='4'></td>`;"
             "                    liveTableBody.appendChild(gapRow);"
             "                }"
             "                const row = document.createElement('tr');"
-            "                if (r.order_of_slaughter % 2 === 0) {"
+            "                if (r.scans && r.scans.flagged) {"
+            "                    row.className = 'scan-flag';"
+            "                } else if (r.order_of_slaughter % 2 === 0) {"
             "                    row.className = 'even-row';"
             "                }"
-            "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${formatIndianaTime(r.recorded_at)}</td>`;"
+            "                const scans = r.scans ? escapeHtml(r.scans.text) : '';"
+            "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td>`"
+            "                    + `<td>${formatIndianaTime(r.recorded_at)}</td><td>${scans}</td>`;"
             "                liveTableBody.appendChild(row);"
             "                lastLiveTime = currentTime;"
             "            });"
@@ -676,7 +701,7 @@ class Handler(BaseHTTPRequestHandler):
             "                hangTableBody.appendChild(row);"
             "                lastHangTime = currentTime;"
             "            });"
-            "            return data;"
+            "            return {data: data, liveRows: liveRows};"
             "        })"
             "        .catch(error => console.error('Error fetching measurements:', error));"
             "}"
@@ -688,16 +713,20 @@ class Handler(BaseHTTPRequestHandler):
             "        timeZone: 'America/Indiana/Indianapolis'"
             "    }).format(new Date());"
             "    dateInput.addEventListener('change', () => {"
-            "        updateTables(`/get?date=${dateInput.value}`);"
+            "        const date = dateInput.value;"
+            "        updateTables(`/get?date=${date}`, `/matches?date=${date}`);"
             "    });"
             "    exportBtn.addEventListener('click', () => {"
             "        const date = dateInput.value;"
-            "        updateTables(`/get?date=${date}`).then(data => {"
-            "            if (!data) return;"
-            "            const liveRows = data.filter(r => r.station === 'live');"
-            "            const hangRows = data.filter(r => r.station === 'hang');"
-            "            const liveSheet = [['Order', 'Weight', 'Recorded At']];"
-            "            liveRows.forEach(r => liveSheet.push([r.order_of_slaughter, r.weight, formatIndianaTime(r.recorded_at)]));"
+            "        updateTables(`/get?date=${date}`, `/matches?date=${date}`).then(result => {"
+            "            if (!result) return;"
+            "            const liveRows = result.liveRows;"
+            "            const hangRows = result.data.filter(r => r.station === 'hang');"
+            "            const liveSheet = [['Order', 'Weight', 'Recorded At', 'Scans']];"
+            "            liveRows.forEach(r => liveSheet.push(["
+            "                r.order_of_slaughter, r.weight, formatIndianaTime(r.recorded_at),"
+            "                r.scans ? r.scans.text : '',"
+            "            ]));"
             "            const hangSheet = [['Order', 'Weight', 'Recorded At']];"
             "            hangRows.forEach(r => hangSheet.push([r.order_of_slaughter, r.weight, formatIndianaTime(r.recorded_at)]));"
             "            const wb = XLSX.utils.book_new();"
@@ -708,11 +737,11 @@ class Handler(BaseHTTPRequestHandler):
             "            XLSX.writeFile(wb, `slaughter_report_${date}.xlsx`);"
             "        });"
             "    });"
-            "    updateTables(`/get?date=${dateInput.value}`);"
+            "    updateTables(`/get?date=${dateInput.value}`, `/matches?date=${dateInput.value}`);"
             "} else {"
             "    const initialUrl = page === 'display' ? '/get?today=true' : '/get';"
-            "    updateTables(initialUrl);"
-            "    setInterval(() => updateTables(initialUrl), 2000);"
+            "    updateTables(initialUrl, '/matches');"
+            "    setInterval(() => updateTables(initialUrl, '/matches'), 2000);"
             "}"
             "</script>"
             "</body>"

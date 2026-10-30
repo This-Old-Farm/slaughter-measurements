@@ -11,7 +11,19 @@ Configuring a computer that currently has only one job: reliably collecting and 
 
 ## Scan Process
 
-**Live station:** scan the animal ID (ends in `B`, `P`, or `L` for beef, pork, or lamb), its sex/type code, and `PLUS30` for beef over 30 months, then weigh.
+**Live station:** scan the animal ID (ends in `B`, `P`, or `L` for beef, pork, or lamb). That alone starts weight collection. Then scan one answer for each step that applies, in this order:
+
+| Step | Yes | No | Species |
+|---|---|---|---|
+| Firearm | `FIREARM` | `NOFIREARM` | beef, pork, lamb |
+| Dirty | `DIRTY` | `CLEAN` | beef, lamb |
+| +30 months | `PLUS30` | `UNDER30` | beef |
+| Dairy | `DAIRY` | `NOTDAIRY` | beef |
+| Sex/type | the sex/type code | | beef, pork, lamb |
+
+Every step is required, so a "no" is scanned too. A scan meant for a different step is ignored. If the next animal ID is scanned first, the weight and the answers already scanned are kept, and the missing steps are left blank.
+
+To start over after a wrong scan, rescan the animal ID. Every scan sequence is kept, even one without a weight. Matching uses the one with the most answers (the newest on a tie) and flags the rest for QA, and the live table on `/display` highlights unfinished and unused sequences.
 
 **Hang station:** put a half carcass on the scale and scan any unused hang tag. The first stable weight is saved with that tag.
 
