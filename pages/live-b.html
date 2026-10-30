@@ -1,0 +1,216 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Station - B</title>
+<style>
+  :root {
+    --bg: #f5f5f2;
+    --panel: #ffffff;
+    --text: #1a1a1a;
+    --muted: #707070;
+    --line: #d8d8d4;
+    --next: #fff1b8;
+    --next-edge: #e0a800;
+    --done: #1e8e3e;
+    --warn: #c62828;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 20px system-ui, sans-serif;
+  }
+  #offline { display: none; background: var(--warn); color: #fff; text-align: center; padding: 0.4em; font-weight: 700; }
+  #offline.show { display: block; }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 2fr) minmax(480px, 3fr);
+    gap: 1em;
+    padding: 1em;
+  }
+  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 1em; }
+  h2 { margin: 0 0 0.5em; font-size: 1em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  #animal { font-size: 2.4em; font-weight: 800; }
+  #meta { color: var(--muted); margin-bottom: 0.4em; }
+  #rescan { color: var(--warn); font-weight: 700; }
+  ol { list-style: none; padding: 0; margin: 0.6em 0 0; }
+  li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1em;
+    padding: 0.6em 0.8em;
+    border-bottom: 1px solid var(--line);
+    font-size: 1.4em;
+  }
+  li .answer { font-weight: 700; }
+  li.done .answer { color: var(--done); }
+  li.next { background: var(--next); border-left: 6px solid var(--next-edge); }
+  li.next .answer { font-size: 0.7em; font-weight: 400; color: var(--text); }
+  li.pending .answer { color: var(--muted); }
+  li.failed .answer { color: var(--warn); }
+  #status { margin-top: 0.8em; font-size: 1.3em; font-weight: 700; }
+  #status.done { color: var(--done); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { white-space: nowrap; }
+  td.flag { white-space: normal; }
+  th, td { text-align: left; padding: 0.35em 0.5em; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 0.85em; }
+  td.flag { color: var(--warn); font-size: 0.85em; }
+  td.missing { color: var(--warn); font-weight: 700; }
+  td.yes { font-weight: 700; }
+  tr.current { background: var(--next); }
+  #totals { color: var(--muted); margin-top: 0.5em; }
+</style>
+</head>
+<body>
+<div id="offline">Not connected - this screen may be out of date</div>
+<div class="layout">
+  <section>
+    <h2>Now scanning</h2>
+    <div id="animal">Scan an animal ID</div>
+    <div id="meta"></div>
+    <div id="rescan"></div>
+    <ol id="steps"></ol>
+    <div id="status"></div>
+  </section>
+  <section>
+    <h2>Today</h2>
+    <table>
+      <thead id="animals-head"></thead>
+      <tbody id="animals"></tbody>
+    </table>
+    <div id="totals"></div>
+  </section>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function formatAnswer(answer) {
+  if (answer === true) return 'Yes';
+  if (answer === false) return 'No';
+  return answer ?? '';
+}
+
+// A step that doesn't apply to the species has no key and stays blank;
+// one that applies but wasn't scanned shows "?".
+function answerCell(animal, step) {
+  if (!(step in animal.answers)) return el('td', 'na', '');
+  const answer = animal.answers[step];
+  if (answer === null) return el('td', 'missing', '?');
+  return el('td', answer === true ? 'yes' : '', formatAnswer(answer));
+}
+
+function renderHead(head, steps) {
+  const row = el('tr');
+  ['#', 'Animal', 'Weight', ...steps.map(s => s.label), 'Flags'].forEach(label => {
+    row.appendChild(el('th', '', label));
+  });
+  head.replaceChildren(row);
+}
+
+function animalRow(a, steps, className) {
+  const row = el('tr', className);
+  row.appendChild(el('td', '', a.order));
+  row.appendChild(el('td', '', a.animal_id));
+  row.appendChild(el('td', '', a.weight !== null ? `${Math.round(a.weight)} lb` : '-'));
+  steps.forEach(s => row.appendChild(answerCell(a, s.step)));
+  row.appendChild(el('td', a.qa.length ? 'flag' : '', a.qa.join('; ')));
+  return row;
+}
+
+function stepRow(label, answer, state) {
+  const row = el('li', state);
+  row.appendChild(el('span', 'label', label));
+  row.appendChild(el('span', 'answer', answer));
+  return row;
+}
+
+function render(status) {
+  const current = status.current;
+  const steps = $('steps');
+  steps.replaceChildren();
+  $('rescan').textContent = '';
+  $('status').className = '';
+  $('status').textContent = '';
+
+  if (!current) {
+    $('animal').textContent = 'Scan an animal ID';
+    $('meta').textContent = '';
+  } else {
+    $('animal').textContent = current.animal_id;
+    $('meta').textContent = `${current.species} - #${current.order}`;
+
+    if (current.entries > 1) {
+      $('rescan').textContent = `Rescan: entry ${current.entry} of ${current.entries}`;
+    }
+
+    if (current.weight !== null) {
+      steps.appendChild(stepRow('Weight', `${Math.round(current.weight)} lb`, 'done'));
+    } else if (current.weight_failed) {
+      steps.appendChild(stepRow('Weight', 'No valid weight - rescan ID', 'failed'));
+    } else {
+      steps.appendChild(stepRow('Weight', 'Waiting...', 'pending'));
+    }
+
+    current.steps.forEach(s => {
+      if (s.answer !== null) {
+        steps.appendChild(stepRow(s.label, formatAnswer(s.answer), 'done'));
+      } else if (s.step === current.next_step) {
+        const codes = s.codes
+          .map(c => typeof c.value === 'boolean' ? c.code : `${c.code} ${c.value}`)
+          .join(' / ');
+        steps.appendChild(stepRow(s.label, `Scan ${codes}`, 'next'));
+      } else {
+        steps.appendChild(stepRow(s.label, '-', 'pending'));
+      }
+    });
+
+    if (current.next_step === null) {
+      $('status').className = current.weight !== null ? 'done' : '';
+      $('status').textContent = current.weight !== null
+        ? 'Done - scan the next animal'
+        : 'Scans done - waiting for weight';
+    }
+  }
+
+  renderHead($('animals-head'), status.steps);
+  const body = $('animals');
+  body.replaceChildren();
+  status.animals.slice().reverse().forEach(a => {
+    const isCurrent = current && a.animal_id === current.animal_id;
+    body.appendChild(animalRow(a, status.steps, isCurrent ? 'current' : ''));
+  });
+
+  const weighed = status.animals.filter(a => a.weight !== null);
+  const total = weighed.reduce((sum, a) => sum + a.weight, 0);
+  $('totals').textContent =
+    `${status.animals.length} animals, ${weighed.length} weighed, ${Math.round(total)} lb total`;
+}
+
+function refresh() {
+  fetch('/live_status')
+    .then(response => response.json())
+    .then(status => {
+      $('offline').className = '';
+      render(status);
+    })
+    .catch(() => { $('offline').className = 'show'; });
+}
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

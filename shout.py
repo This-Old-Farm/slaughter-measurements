@@ -16,6 +16,11 @@ Endpoints:
         JSON of live animals matched to hang tags for a day
         (default today), with QA flags. See matching.py.
 
+    GET /live, /live/a, /live/b, /live/c
+        Candidate live-station pages (#62), all fed by
+        GET /live_status: the animal being scanned now and today's
+        live animals. See live_status.py.
+
 Environment:
     DB_PATH
         SQLite database.
@@ -35,6 +40,7 @@ import sqlite3
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+import live_status
 import local_time
 import matching
 import schema
@@ -56,6 +62,18 @@ PORT = int(
 )
 
 DEFAULT_SECONDS = 43200
+
+# Static pages, read on each request so they can be edited in place.
+PAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pages")
+
+# The candidate live-station pages, by URL. Once the operator picks
+# one, the others are deleted (#62).
+LIVE_PAGES = {
+    "/live": "live.html",
+    "/live/a": "live-a.html",
+    "/live/b": "live-b.html",
+    "/live/c": "live-c.html",
+}
 
 
 # ============================================================
@@ -220,6 +238,37 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 self.render_html(rows, page="display"),
                 "text/html; charset=utf-8",
+            )
+
+            return
+
+        # ====================================================
+        # Live-station pages
+        # ====================================================
+
+        if parsed.path in LIVE_PAGES:
+            with open(os.path.join(PAGES_DIR, LIVE_PAGES[parsed.path]), encoding="utf-8") as page:
+                self._send(
+                    200,
+                    page.read(),
+                    "text/html; charset=utf-8",
+                )
+
+            return
+
+        if parsed.path == "/live_status":
+            conn = sqlite3.connect(DB_PATH)
+
+            try:
+                status = live_status.live_status(conn, local_time.local_today().isoformat())
+
+            finally:
+                conn.close()
+
+            self._send(
+                200,
+                json.dumps(status),
+                "application/json",
             )
 
             return

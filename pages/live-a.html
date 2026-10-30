@@ -1,0 +1,207 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Station - A</title>
+<style>
+  :root {
+    --bg: #111;
+    --panel: #1d1d1d;
+    --text: #f4f4f4;
+    --muted: #9a9a9a;
+    --next: #ffd23f;
+    --done: #3ddc84;
+    --warn: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 20px system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1em;
+    padding: 0.6em 1em;
+    background: var(--panel);
+    font-size: 1.6em;
+  }
+  #animal { font-weight: 700; }
+  #weight.waiting { color: var(--next); }
+  #weight.failed { color: var(--warn); }
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 1em;
+  }
+  #prompt-label { color: var(--muted); font-size: 1.4em; text-transform: uppercase; letter-spacing: 0.1em; }
+  #prompt { font-size: clamp(2.5em, 11vw, 7em); font-weight: 800; color: var(--next); line-height: 1.1; }
+  #prompt.done { color: var(--done); font-size: clamp(2em, 6vw, 4em); }
+  #codes { font-size: 2em; margin-top: 0.4em; }
+  #codes span { display: inline-block; margin: 0 0.5em; }
+  #rescan { color: var(--warn); font-size: 1.2em; margin-top: 0.8em; min-height: 1.2em; }
+  #steps { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5em; margin-top: 1.2em; }
+  .chip { padding: 0.3em 0.8em; border-radius: 999px; background: var(--panel); color: var(--muted); }
+  .chip.answered { color: var(--text); }
+  .chip.next { outline: 2px solid var(--next); color: var(--next); }
+  footer { background: var(--panel); padding: 0.5em 1em; }
+  footer table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+  footer th, footer td { text-align: left; padding: 0.2em 0.5em; border-top: 1px solid #333; }
+  footer th { color: var(--muted); font-weight: 600; }
+  footer th, footer td { white-space: nowrap; }
+  footer td.flag { color: var(--warn); white-space: normal; }
+  footer td.missing { color: var(--warn); font-weight: 700; }
+  footer td.yes { color: var(--next); font-weight: 700; }
+  #offline { display: none; background: var(--warn); color: #000; text-align: center; padding: 0.4em; font-weight: 700; }
+  #offline.show { display: block; }
+</style>
+</head>
+<body>
+<div id="offline">Not connected - this screen may be out of date</div>
+<header>
+  <div id="animal">-</div>
+  <div id="weight"></div>
+</header>
+<main>
+  <div id="prompt-label"></div>
+  <div id="prompt">Scan an animal ID</div>
+  <div id="codes"></div>
+  <div id="rescan"></div>
+  <div id="steps"></div>
+</main>
+<footer>
+  <table><thead id="recent-head"></thead><tbody id="recent"></tbody></table>
+</footer>
+<script>
+const $ = id => document.getElementById(id);
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function formatAnswer(answer) {
+  if (answer === true) return 'Yes';
+  if (answer === false) return 'No';
+  return answer ?? '';
+}
+
+// A step that doesn't apply to the species has no key and stays blank;
+// one that applies but wasn't scanned shows "?".
+function answerCell(animal, step) {
+  if (!(step in animal.answers)) return el('td', 'na', '');
+  const answer = animal.answers[step];
+  if (answer === null) return el('td', 'missing', '?');
+  return el('td', answer === true ? 'yes' : '', formatAnswer(answer));
+}
+
+function renderHead(head, steps) {
+  const row = el('tr');
+  ['#', 'Animal', 'Weight', ...steps.map(s => s.label), 'Flags'].forEach(label => {
+    row.appendChild(el('th', '', label));
+  });
+  head.replaceChildren(row);
+}
+
+function animalRow(a, steps, className) {
+  const row = el('tr', className);
+  row.appendChild(el('td', '', a.order));
+  row.appendChild(el('td', '', a.animal_id));
+  row.appendChild(el('td', '', a.weight !== null ? `${Math.round(a.weight)} lb` : '-'));
+  steps.forEach(s => row.appendChild(answerCell(a, s.step)));
+  row.appendChild(el('td', a.qa.length ? 'flag' : '', a.qa.join('; ')));
+  return row;
+}
+
+function render(status) {
+  const current = status.current;
+  const weight = $('weight');
+  weight.className = '';
+  $('codes').replaceChildren();
+  $('steps').replaceChildren();
+  $('rescan').textContent = '';
+
+  if (!current) {
+    $('animal').textContent = '-';
+    weight.textContent = '';
+    $('prompt-label').textContent = '';
+    $('prompt').className = '';
+    $('prompt').textContent = 'Scan an animal ID';
+  } else {
+    $('animal').textContent = `#${current.order}  ${current.animal_id}  ${current.species}`;
+
+    if (current.weight !== null) {
+      weight.textContent = `${Math.round(current.weight)} lb`;
+    } else if (current.weight_failed) {
+      weight.className = 'failed';
+      weight.textContent = 'No valid weight - rescan ID';
+    } else {
+      weight.className = 'waiting';
+      weight.textContent = 'Waiting for weight...';
+    }
+
+    if (current.entries > 1) {
+      $('rescan').textContent = `Rescan: entry ${current.entry} of ${current.entries}`;
+    }
+
+    const next = current.steps.find(s => s.step === current.next_step);
+
+    if (next) {
+      $('prompt-label').textContent = 'Scan next';
+      $('prompt').className = '';
+      $('prompt').textContent = next.label;
+      next.codes.forEach(c => {
+        const label = typeof c.value === 'boolean' ? `${c.code}` : `${c.code} ${c.value}`;
+        $('codes').appendChild(el('span', '', label));
+      });
+    } else {
+      $('prompt-label').textContent = '';
+      $('prompt').className = 'done';
+      $('prompt').textContent = current.weight !== null
+        ? 'Done - scan the next animal'
+        : 'Scans done - waiting for weight';
+    }
+
+    current.steps.forEach(s => {
+      const state = s.answer !== null ? 'answered' : s.step === current.next_step ? 'next' : '';
+      const text = s.answer !== null ? `${s.label}: ${formatAnswer(s.answer)}` : s.label;
+      $('steps').appendChild(el('span', `chip ${state}`, text));
+    });
+  }
+
+  renderHead($('recent-head'), status.steps);
+  const recent = $('recent');
+  recent.replaceChildren();
+  status.animals.slice(-5).reverse().forEach(a => {
+    recent.appendChild(animalRow(a, status.steps, ''));
+  });
+}
+
+function refresh() {
+  fetch('/live_status')
+    .then(response => response.json())
+    .then(status => {
+      $('offline').className = '';
+      render(status);
+    })
+    .catch(() => { $('offline').className = 'show'; });
+}
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

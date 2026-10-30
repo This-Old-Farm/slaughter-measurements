@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Station - C</title>
+<style>
+  :root {
+    --bg: #eef1f5;
+    --text: #15202b;
+    --muted: #5c6b7a;
+    --tile: #d5dbe3;
+    --next: #f5b700;
+    --done: #2e9d5b;
+    --warn: #d64545;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 20px system-ui, sans-serif;
+    padding: 1em;
+  }
+  #offline { display: none; background: var(--warn); color: #fff; text-align: center; padding: 0.4em; font-weight: 700; margin: -1em -1em 1em; }
+  #offline.show { display: block; }
+  #headline { display: flex; align-items: baseline; gap: 0.8em; flex-wrap: wrap; margin-bottom: 0.6em; }
+  #animal { font-size: 2em; font-weight: 800; }
+  #meta { color: var(--muted); }
+  #rescan { color: var(--warn); font-weight: 700; }
+  #tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.6em;
+    margin-bottom: 0.6em;
+  }
+  .tile {
+    background: var(--tile);
+    color: var(--muted);
+    border-radius: 10px;
+    padding: 0.8em;
+    min-height: 7em;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .tile .label { font-size: 0.9em; text-transform: uppercase; letter-spacing: 0.06em; }
+  .tile .value { font-size: 2em; font-weight: 800; }
+  .tile .hint { font-size: 0.8em; }
+  .tile.done { background: var(--done); color: #fff; }
+  .tile.next { background: var(--next); color: #000; box-shadow: 0 0 0 4px #000 inset; }
+  .tile.failed { background: var(--warn); color: #fff; }
+  #status { font-size: 1.6em; font-weight: 800; min-height: 1.4em; margin-bottom: 0.8em; }
+  #status.done { color: var(--done); }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 0.35em 0.6em; border-bottom: 1px solid var(--tile); }
+  th { background: var(--text); color: #fff; font-weight: 600; font-size: 0.85em; }
+  th, td { white-space: nowrap; }
+  td.flag { color: var(--warn); font-size: 0.85em; white-space: normal; }
+  td.missing { color: var(--warn); font-weight: 700; }
+  td.yes { font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="offline">Not connected - this screen may be out of date</div>
+<div id="headline">
+  <div id="animal">Scan an animal ID</div>
+  <div id="meta"></div>
+  <div id="rescan"></div>
+</div>
+<div id="tiles"></div>
+<div id="status"></div>
+<table>
+  <thead id="animals-head"></thead>
+  <tbody id="animals"></tbody>
+</table>
+<script>
+const $ = id => document.getElementById(id);
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function formatAnswer(answer) {
+  if (answer === true) return 'Yes';
+  if (answer === false) return 'No';
+  return answer ?? '';
+}
+
+// A step that doesn't apply to the species has no key and stays blank;
+// one that applies but wasn't scanned shows "?".
+function answerCell(animal, step) {
+  if (!(step in animal.answers)) return el('td', 'na', '');
+  const answer = animal.answers[step];
+  if (answer === null) return el('td', 'missing', '?');
+  return el('td', answer === true ? 'yes' : '', formatAnswer(answer));
+}
+
+function renderHead(head, steps) {
+  const row = el('tr');
+  ['#', 'Animal', 'Weight', ...steps.map(s => s.label), 'Flags'].forEach(label => {
+    row.appendChild(el('th', '', label));
+  });
+  head.replaceChildren(row);
+}
+
+function animalRow(a, steps, className) {
+  const row = el('tr', className);
+  row.appendChild(el('td', '', a.order));
+  row.appendChild(el('td', '', a.animal_id));
+  row.appendChild(el('td', '', a.weight !== null ? `${Math.round(a.weight)} lb` : '-'));
+  steps.forEach(s => row.appendChild(answerCell(a, s.step)));
+  row.appendChild(el('td', a.qa.length ? 'flag' : '', a.qa.join('; ')));
+  return row;
+}
+
+function tile(label, value, hint, state) {
+  const node = el('div', `tile ${state}`);
+  node.appendChild(el('div', 'label', label));
+  node.appendChild(el('div', 'value', value));
+  node.appendChild(el('div', 'hint', hint));
+  return node;
+}
+
+function render(status) {
+  const current = status.current;
+  const tiles = $('tiles');
+  tiles.replaceChildren();
+  $('rescan').textContent = '';
+  $('status').className = '';
+  $('status').textContent = '';
+
+  if (!current) {
+    $('animal').textContent = 'Scan an animal ID';
+    $('meta').textContent = '';
+  } else {
+    $('animal').textContent = current.animal_id;
+    $('meta').textContent = `${current.species} - #${current.order}`;
+
+    if (current.entries > 1) {
+      $('rescan').textContent = `Rescan: entry ${current.entry} of ${current.entries}`;
+    }
+
+    if (current.weight !== null) {
+      tiles.appendChild(tile('Weight', `${Math.round(current.weight)}`, 'lb', 'done'));
+    } else if (current.weight_failed) {
+      tiles.appendChild(tile('Weight', '!', 'No valid weight - rescan ID', 'failed'));
+    } else {
+      tiles.appendChild(tile('Weight', '...', 'Waiting', ''));
+    }
+
+    current.steps.forEach(s => {
+      if (s.answer !== null) {
+        tiles.appendChild(tile(s.label, formatAnswer(s.answer), '', 'done'));
+      } else if (s.step === current.next_step) {
+        const codes = s.codes
+          .map(c => typeof c.value === 'boolean' ? c.code : `${c.code} ${c.value}`)
+          .join(' / ');
+        tiles.appendChild(tile(s.label, 'Scan', codes, 'next'));
+      } else {
+        tiles.appendChild(tile(s.label, '-', '', ''));
+      }
+    });
+
+    if (current.next_step === null) {
+      $('status').className = current.weight !== null ? 'done' : '';
+      $('status').textContent = current.weight !== null
+        ? 'Done - scan the next animal'
+        : 'Scans done - waiting for weight';
+    }
+  }
+
+  renderHead($('animals-head'), status.steps);
+  const body = $('animals');
+  body.replaceChildren();
+  status.animals.slice().reverse().forEach(a => {
+    body.appendChild(animalRow(a, status.steps, ''));
+  });
+}
+
+function refresh() {
+  fetch('/live_status')
+    .then(response => response.json())
+    .then(status => {
+      $('offline').className = '';
+      render(status);
+    })
+    .catch(() => { $('offline').className = 'show'; });
+}
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

@@ -49,6 +49,15 @@ YES_NO_CODES = {
     "dairy": {"DAIRY": True, "NOTDAIRY": False},
 }
 
+# What each step is called on screen.
+STEP_LABELS = {
+    "firearm": "Firearm",
+    "dirty": "Dirty",
+    "over_30_months": "+30 months",
+    "dairy": "Dairy",
+    "sex": "Sex/type",
+}
+
 # Step names double as animal_details column names.
 STEPS = {
     "BEEF": ["firearm", "dirty", "over_30_months", "dairy", "sex"],
