@@ -38,6 +38,23 @@ Run its tests with:
 python3 -m unittest
 ```
 
+## Practicing the Workflow
+
+`practice.py` runs the real scanners with fake scales, so the team can practice the scan process on the slaughter collection PC without real weights. Run it as root from the repo:
+
+``` bash
+sudo python3 practice.py --fresh
+```
+
+It stops the listen service, runs `listen.py` and `shout.py` against a separate practice database (`/var/lib/slaughter/practice.db`), and serves the pages on port 8080 (`http://<PC name>:8080/live`, `/display`, `/matches`). The real database and the pages on port 80 are not touched.
+
+- **Live scale:** sends a plausible weight for the species about 2 seconds after each animal ID scan.
+- **Hang scale:** holds a half-carcass reading sized to the next live animal, captured as soon as a tag is scanned.
+- **Overrides:** type a weight and Enter to set the next one, e.g. `0` (live), `l 1250`, or `h -2`, to practice a bad reading and a rescan.
+- **Practice panel:** while practice runs, `/live` shows a panel that does the same from the page. It has bad-reading buttons, a box to send any weight, and a switch to turn automatic weights off so every weight is sent by hand.
+
+Ctrl-C ends practice and restarts the listen service. Leave out `--fresh` to keep the previous practice session's scans.
+
 ## Current Hardware Setup
 
 ### Barcode Scanner

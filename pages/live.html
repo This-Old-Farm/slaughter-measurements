@@ -58,6 +58,20 @@
   #guide code { background: #f0f0f0; padding: 0 0.25em; border-radius: 3px; }
   #guide .columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 0 2em; }
   iframe { flex: 1; width: 100%; border: 0; }
+  #practice {
+    display: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em 1.5em;
+    padding: 0.4em 1em;
+    background: #fff4d6;
+    border-bottom: 2px solid var(--accent);
+  }
+  #practice.show { display: flex; }
+  #practice .badge { background: var(--accent); color: #000; font-weight: 800; padding: 0.1em 0.6em; border-radius: 4px; }
+  #practice button { background: #fff; color: var(--text); border-color: #c9b98a; }
+  #practice input[type="number"] { width: 6em; font: inherit; padding: 0.2em 0.4em; }
+  #practice .group > span, #practice-message { color: #6b5a1e; }
 </style>
 </head>
 <body>
@@ -76,6 +90,23 @@
     <label><input type="checkbox" data-part="flags" checked> Flags</label>
   </div>
   <button id="guide-button" aria-pressed="false">Guide</button>
+</div>
+
+<div id="practice">
+  <span class="badge">PRACTICE</span>
+  <label><input type="checkbox" id="practice-auto" checked> Automatic weights</label>
+  <div class="group">
+    <span>Bad reading</span>
+    <button data-station="live" data-weight="0">Live 0</button>
+    <button data-station="hang" data-weight="0">Hang 0</button>
+  </div>
+  <div class="group">
+    <span>Next weight</span>
+    <input type="number" id="practice-weight" placeholder="lb">
+    <button data-station="live">Send to live</button>
+    <button data-station="hang">Send to hang</button>
+  </div>
+  <span id="practice-message"></span>
 </div>
 
 <div id="guide">
@@ -169,6 +200,60 @@ guideButton.addEventListener('click', () => {
 });
 
 apply();
+
+// ------------------------------------------------------------
+// Practice panel: only while practice.py is running
+// ------------------------------------------------------------
+
+const practice = document.getElementById('practice');
+const practiceAuto = document.getElementById('practice-auto');
+const practiceMessage = document.getElementById('practice-message');
+
+function practicePost(change, message) {
+  return fetch('/practice', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(change),
+  })
+    .then(response => {
+      if (!response.ok) throw new Error(response.status);
+      return response.json();
+    })
+    .then(state => {
+      practiceAuto.checked = state.auto;
+      practiceMessage.textContent = message;
+    })
+    .catch(() => { practiceMessage.textContent = 'Could not reach practice mode.'; });
+}
+
+fetch('/practice')
+  .then(response => (response.ok ? response.json() : null))
+  .then(state => {
+    if (!state) return;
+    practice.className = 'show';
+    practiceAuto.checked = state.auto;
+  })
+  .catch(() => {});
+
+practiceAuto.addEventListener('change', () => {
+  const on = practiceAuto.checked;
+  practicePost({auto: on}, on ? 'Automatic weights on.' : 'Automatic weights off: send each weight by hand.');
+});
+
+practice.querySelectorAll('button[data-station]').forEach(button => {
+  button.addEventListener('click', () => {
+    const station = button.dataset.station;
+    const weight = button.dataset.weight ?? document.getElementById('practice-weight').value;
+
+    if (weight === '' || Number.isNaN(Number(weight))) {
+      practiceMessage.textContent = 'Type a weight first.';
+      return;
+    }
+
+    const when = station === 'live' ? 'the waiting animal, or the next one' : 'the next hang tag';
+    practicePost({station: station, weight: Number(weight)}, `Next ${station} weight ${weight} lb, for ${when}.`);
+  });
+});
 </script>
 </body>
 </html>
