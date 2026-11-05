@@ -16,7 +16,7 @@ Endpoints:
         JSON of live animals matched to hang tags for a day
         (default today), with QA flags. See matching.py.
 
-    GET /live, /live/a, /live/b, /live/c
+    GET /live, /live/a, /live/b, /live/c, /live/d
         Candidate live-station pages (#62), all fed by
         GET /live_status: the animal being scanned now and today's
         live animals. See live_status.py.
@@ -73,6 +73,7 @@ LIVE_PAGES = {
     "/live/a": "live-a.html",
     "/live/b": "live-b.html",
     "/live/c": "live-c.html",
+    "/live/d": "live-d.html",
 }
 
 
