@@ -139,6 +139,8 @@ def fetch_recent(seconds=None, date=None):
 
     conn.row_factory = sqlite3.Row
 
+    # weight already has blood added for hogs and lambs (#66) and is the
+    # one to show. scale_reading is a record only; see schema.py.
     if date:
         query = """
             SELECT id, order_of_slaughter, scan_code, station, weight, recorded_at

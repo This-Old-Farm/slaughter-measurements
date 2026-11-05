@@ -72,6 +72,32 @@ STEP_CODES = {code for codes in YES_NO_CODES.values() for code in codes} | {
 }
 
 
+# Hogs and lambs are bled before the live weight is taken, so the
+# estimated blood is added back (#66). Each species maps to
+# (up to and including this many lb, add this many lb) brackets, in
+# order; None means no upper limit.
+BLOOD_WEIGHT = {
+    "PORK": [(350, 6), (500, 8), (None, 10)],
+    "LAMB": [(None, 4)],
+}
+
+
+def add_blood_weight(species, weight):
+    """
+    The live weight with the estimated blood added back. A zero or
+    negative reading (empty or unsettled scale) is left as is so it is
+    never mistaken for a real weight.
+    """
+    if weight <= 0:
+        return weight
+
+    for up_to, blood in BLOOD_WEIGHT.get(species, []):
+        if up_to is None or weight <= up_to:
+            return weight + blood
+
+    return weight
+
+
 def get_species(barcode):
     """
     The species an animal ID belongs to, from its last letter, or None
