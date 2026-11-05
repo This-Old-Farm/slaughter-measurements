@@ -24,6 +24,8 @@ Configuring a computer that currently has only one job: reliably collecting and 
 
 Every step is required, so a "no" is scanned too. A scan meant for a different step is ignored. If the next animal ID is scanned first, the weight and the answers already scanned are kept, and the missing steps are left blank.
 
+Hogs and lambs are bled before they are weighed, so the saved live weight has the estimated blood added back: hogs +6 lb up to 350 lb, +8 lb up to 500 lb and +10 lb above; lambs +4 lb. That adjusted `weight` is what every page and report shows. The scale's own reading is kept in `scale_reading` only as a record, and is never shown.
+
 To start over after a wrong scan, rescan the animal ID. Every scan sequence is kept, even one without a weight. Matching uses the one with the most answers (the newest on a tie) and flags the rest for QA, and the live table on `/display` highlights unfinished and unused sequences.
 
 **Hang station:** put a half carcass on the scale and scan any unused hang tag. The first stable weight is saved with that tag.

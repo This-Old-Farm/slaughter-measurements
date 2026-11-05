@@ -12,9 +12,18 @@ MEASUREMENTS_SCHEMA = """
         scan_code TEXT NOT NULL DEFAULT '',
         station TEXT NOT NULL,
         weight REAL NOT NULL,
+        scale_reading REAL,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
     """
+
+# weight is the animal's weight: the one to show people and to use in
+# matching. For hogs and lambs it includes the estimated blood, since
+# they are bled before weighing (#66).
+#
+# scale_reading is only a record of what the scale said, kept so the
+# blood adjustment can be checked or redone. Don't show it or calculate
+# with it. It is NULL on rows saved before #66.
 
 # One row per scan sequence: each animal ID scan starts one, and a
 # rescan of the same ID starts another rather than changing the first.
@@ -62,6 +71,9 @@ def init(conn):
             conn.execute("ALTER TABLE measurements RENAME COLUMN barcode_buffer TO scan_code")
         elif "scan_code" not in measurement_columns:
             conn.execute("ALTER TABLE measurements ADD COLUMN scan_code TEXT NOT NULL DEFAULT ''")
+
+        if "scale_reading" not in measurement_columns:
+            conn.execute("ALTER TABLE measurements ADD COLUMN scale_reading REAL")
 
         # Databases created before #61 keyed details by measurement and
         # required sex. SQLite can't change either in place, so rebuild

@@ -75,6 +75,32 @@ class InitTest(unittest.TestCase):
 
         self.assertIn("scan_code", schema.columns(self.conn, "measurements"))
 
+    def test_measurements_from_before_66_get_scale_reading(self):
+        self.conn.execute(
+            """
+            CREATE TABLE measurements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_of_slaughter INTEGER NOT NULL,
+                scan_code TEXT NOT NULL DEFAULT '',
+                station TEXT NOT NULL,
+                weight REAL NOT NULL,
+                recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO measurements (order_of_slaughter, station, weight) VALUES (1, 'live', 250)"
+        )
+        self.conn.commit()
+
+        schema.init(self.conn)
+
+        # Old rows keep their weight, with no scale reading recorded.
+        self.assertEqual(
+            self.conn.execute("SELECT weight, scale_reading FROM measurements").fetchall(),
+            [(250.0, None)],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

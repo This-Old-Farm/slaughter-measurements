@@ -293,13 +293,18 @@ class Station:
     # Save measurement
     # ========================================================
 
-    def save_measurement(self, weight):
+    def save_measurement(self, weight, scale_reading=None):
 
         if self.scan_code is None:
             return
 
         # Round to the nearest integer
         weight = round(weight)
+
+        # The reading as it came off the scale. The live station passes
+        # it separately when weight has blood added (#66).
+        if scale_reading is None:
+            scale_reading = weight
 
         # A code that was already weighed today is a reweigh and
         # keeps its original place in the order. Every weight is
@@ -319,15 +324,16 @@ class Station:
         cursor = db.execute(
             """
             INSERT INTO measurements
-                (order_of_slaughter, scan_code, station, weight)
+                (order_of_slaughter, scan_code, station, weight, scale_reading)
             VALUES
-                (?, ?, ?, ?)
+                (?, ?, ?, ?, ?)
             """,
             (
                 order_of_slaughter,
                 self.scan_code,
                 self.name,
                 weight,
+                scale_reading,
             ),
         )
 
@@ -528,7 +534,22 @@ class LiveStation(Station):
         if self.scan_code is None:
             return
 
-        measurement_id = super().save_measurement(weight)
+        # The saved live weight includes the estimated blood for
+        # hogs and lambs, which are bled before weighing (#66). The
+        # reading itself is saved too, as scale_reading.
+        scale_reading = round(weight)
+        weight = scan_sequence.add_blood_weight(self.sequence.species, scale_reading)
+
+        if weight != scale_reading:
+            log.info(
+                "%s: BLOOD: %s scale reading %d + %d lb blood.",
+                self.name,
+                self.scan_code,
+                scale_reading,
+                weight - scale_reading,
+            )
+
+        measurement_id = super().save_measurement(weight, scale_reading)
 
         if measurement_id is None:
             return
