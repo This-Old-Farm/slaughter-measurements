@@ -8,7 +8,7 @@ Configuring a computer that currently has only one job: reliably collecting and 
 - http://localhost/test displays the table
 - http://localhost/get?seconds=N is an api which accepts an integer number of seconds, and returns json for all measurements taken in the most recent N seconds
 - http://localhost/matches?date=YYYY-MM-DD returns json pairing each live animal with its hang tags for a day (default today), with QA flags
-- http://localhost/live is for trying the three candidate live-station pages (`/live/a`, `/live/b`, `/live/c`), which show the animal being scanned, what's left to scan for it, and today's live animals. It has a short guide to the scan process, buttons to switch versions, and switches to hide the animals table, barcode names, or flags column. The operator picks one version and the others are deleted (#62)
+- http://localhost/live is for trying the four candidate live-station pages (`/live/a`, `/live/b`, `/live/c`, `/live/d`), which show the animal being scanned, what's left to scan for it, and today's live animals. It has a short guide to the scan process, buttons to switch versions, and switches to hide the animals table, barcode names, or flags column. The operator picks one version and the others are deleted (#62)
 
 ## Scan Process
 
@@ -37,6 +37,23 @@ Run its tests with:
 ``` bash
 python3 -m unittest
 ```
+
+## Practicing the Workflow
+
+`practice.py` runs the real scanners with fake scales, so the team can practice the scan process on the slaughter collection PC without real weights. Run it as root from the repo:
+
+``` bash
+sudo python3 practice.py --fresh
+```
+
+It stops the listen service, runs `listen.py` and `shout.py` against a separate practice database (`/var/lib/slaughter/practice.db`), and serves the pages on port 8080 (`http://<PC name>:8080/live`, `/display`, `/matches`). The real database and the pages on port 80 are not touched.
+
+- **Live scale:** sends a plausible weight for the species about 2 seconds after each animal ID scan.
+- **Hang scale:** holds a half-carcass reading sized to the next live animal, captured as soon as a tag is scanned.
+- **Overrides:** type a weight and Enter to set the next one, e.g. `0` (live), `l 1250`, or `h -2`, to practice a bad reading and a rescan.
+- **Practice panel:** while practice runs, `/live` shows a panel that does the same from the page. It has bad-reading buttons, a box to send any weight, and a switch to turn automatic weights off so every weight is sent by hand.
+
+Ctrl-C ends practice and restarts the listen service. Leave out `--fresh` to keep the previous practice session's scans.
 
 ## Current Hardware Setup
 
