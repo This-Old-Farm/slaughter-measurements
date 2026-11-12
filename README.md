@@ -56,7 +56,7 @@ The scanner was successfully tested with:
 sudo evtest /dev/input/event14
 ```
 
-### Scale Indicator
+### Live Scale Indicator
 
 The scale indicator is an MSI-8000HD connected directly to the laptop's built-in RS-232 serial port.
 
@@ -80,6 +80,45 @@ This is commonly written as:
 ``` text
 9600-8-N-1
 ```
+
+### Hang Scale Indicator
+
+The hang station's scale indicator is a Rice Lake IQ355+, connected through a Prolific USB-to-serial adapter.
+
+Linux exposes the adapter as `/dev/ttyUSB0`. The PC's cellular modem also takes `ttyUSB` numbers, so check which one the adapter got with:
+
+``` bash
+ls -l /dev/serial/by-id/
+```
+
+The IQ355+ must stream continuously, with these settings (a reset of the indicator clears them):
+
+``` text
+Stream:     EDP
+Serial:     9600-8-N-1
+Units:      pounds
+Mode:       gross
+```
+
+`listen.py` expects each reading as `<STX><polarity><7-char weight><unit><G/N><status><CR><LF>` and saves the first stable one after a hang tag is scanned.
+
+To see what the indicator is sending, stop listen (it holds the port), watch the port in hex with minicom, then start listen again:
+
+``` bash
+sudo systemctl stop listen-slaughter-measurements
+sudo minicom -D /dev/ttyUSB0 -b 9600 -8 -H
+sudo systemctl start listen-slaughter-measurements
+```
+
+Nothing is recorded while listen is stopped. Quit minicom with Ctrl-A, then X. A good stable reading of 16.0 lb, captured from the scale, looks like:
+
+``` text
+02 20 20 20 20 31 36 2e 30 4c 47 20 0d 0a
+```
+
+That is STX, a space (positive), `   16.0`, `L` (pounds), `G` (gross), a space (stable; `M` means moving), then CR LF. The scale repeats it continuously.
+
+If minicom shows only `bf`, `fb`, `fe` and similar bytes, the indicator's port, wiring or stream setting is wrong. If nothing appears, turn off Hardware Flow Control in minicom (Ctrl-A, then O, Serial port setup).
 
 ## Software Requirements
 
