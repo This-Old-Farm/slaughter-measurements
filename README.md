@@ -32,7 +32,7 @@ To start over after a wrong scan, rescan the animal ID. Every scan sequence is k
 
 Scanning a code that was already weighed today records a reweigh: the new weight is saved and the code keeps its original place in the order.
 
-`matching.py` pairs the nth live animal with the next hang tags in first-scan order (two for beef and pork, one for lamb). It uses each code's most recent valid weight (a zero or negative reading means the scale was empty or hadn't settled, and is never used) and flags for QA: reweighs, codes with no valid weight, a yield (hang total / live weight) outside the species' band, and two halves that differ by more than 15%. It is a prototype that may move to lapis.
+`matching.py` pairs the nth live animal with the next hang tags in first-scan order (two for beef and pork, one for lamb). It uses each code's most recent valid weight (a zero or negative reading means the scale was empty or hadn't settled, and is never used) and flags for QA: reweighs, codes with no valid weight, a yield (hang total / live weight, with the blood estimate for hogs and lambs) outside the species' band, and two halves that differ by more than 15%. It is a prototype that may move to lapis.
 
 Run its tests with:
 
