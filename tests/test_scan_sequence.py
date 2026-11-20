@@ -1,6 +1,6 @@
 import unittest
 
-from scan_sequence import AnimalSequence, get_species
+from scan_sequence import AnimalSequence, estimate_with_blood, get_species
 
 
 class GetSpeciesTest(unittest.TestCase):
@@ -79,3 +79,23 @@ class AnimalSequenceTest(unittest.TestCase):
 
         self.assertIsNone(sequence.answer("FIREARM"))
         self.assertEqual(sequence.answers["firearm"], False)
+
+
+class EstimateWithBloodTest(unittest.TestCase):
+    def test_hog_brackets(self):
+        self.assertEqual(estimate_with_blood("PORK", 250), 256)
+        self.assertEqual(estimate_with_blood("PORK", 350), 356)
+        self.assertEqual(estimate_with_blood("PORK", 351), 359)
+        self.assertEqual(estimate_with_blood("PORK", 500), 508)
+        self.assertEqual(estimate_with_blood("PORK", 501), 511)
+
+    def test_lamb_adds_four(self):
+        self.assertEqual(estimate_with_blood("LAMB", 120), 124)
+
+    def test_beef_has_no_estimate(self):
+        self.assertIsNone(estimate_with_blood("BEEF", 1200))
+
+    def test_no_valid_weight_has_no_estimate(self):
+        self.assertIsNone(estimate_with_blood("PORK", None))
+        self.assertIsNone(estimate_with_blood("PORK", 0))
+        self.assertIsNone(estimate_with_blood("LAMB", -3))
