@@ -148,6 +148,11 @@ KEY_MAP = {
     "KEY_Y": "Y",
     "KEY_Z": "Z",
     "KEY_MINUS": "-",
+    # The animal ID's offal list: 1234B [L,H,T] (#71)
+    "KEY_SPACE": " ",
+    "KEY_LEFTBRACE": "[",
+    "KEY_RIGHTBRACE": "]",
+    "KEY_COMMA": ",",
 }
 
 
@@ -410,7 +415,19 @@ class LiveStation(Station):
         # Anything else must be the next animal ID.
         # --------------------------------------------------------
 
-        species = scan_sequence.get_species(barcode)
+        parsed = scan_sequence.parse_animal_scan(barcode)
+
+        if parsed is None:
+            log.warning(
+                "%s: Bad scan %s - offal list must be in brackets, like 1234B [L,H].",
+                self.name,
+                barcode,
+            )
+
+            return
+
+        animal_id, offals = parsed
+        species = scan_sequence.get_species(animal_id)
 
         if species is None:
             if self.sequence is not None and self.sequence.next_step is not None:
@@ -431,9 +448,9 @@ class LiveStation(Station):
 
             return
 
-        self.start_animal(barcode, species)
+        self.start_animal(animal_id, species, offals)
 
-    def start_animal(self, animal_id, species):
+    def start_animal(self, animal_id, species, offals=None):
 
         previous = self.sequence
 
@@ -471,8 +488,8 @@ class LiveStation(Station):
         self.sequence = scan_sequence.AnimalSequence(animal_id, species)
 
         cursor = db.execute(
-            "INSERT INTO animal_details (animal_id, species) VALUES (?, ?)",
-            (animal_id, species),
+            "INSERT INTO animal_details (animal_id, species, offals) VALUES (?, ?, ?)",
+            (animal_id, species, None if offals is None else ",".join(offals)),
         )
 
         db.commit()
@@ -480,10 +497,11 @@ class LiveStation(Station):
         self.sequence_id = cursor.lastrowid
 
         log.info(
-            "%s: ANIMAL: %s (%s)",
+            "%s: ANIMAL: %s (%s), offals: %s",
             self.name,
             animal_id,
             species,
+            "not on label" if offals is None else ",".join(offals) or "none",
         )
 
         log.info(

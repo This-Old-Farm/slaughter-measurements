@@ -24,6 +24,8 @@ Configuring a computer that currently has only one job: reliably collecting and 
 
 Every step is required, so a "no" is scanned too. A scan meant for a different step is ignored. If the next animal ID is scanned first, the weight and the answers already scanned are kept, and the missing steps are left blank.
 
+The animal ID's QR code also carries the offals the farmer asked to keep, in brackets after a space: `9999B [L,H,T,O,K,SB,HE,HI,CF]` for liver, heart, tongue, oxtail, kidney, sweetbreads, head, hide and caul fat. `9999B []` means the farmer asked for none. A scan missing its closing bracket is ignored. The offals show on `/display` and the live-station pages (#71).
+
 To start over after a wrong scan, rescan the animal ID. Every scan sequence is kept, even one without a weight. Matching uses the one with the most answers (the newest on a tie) and flags the rest for QA, and the live table on `/display` highlights unfinished and unused sequences.
 
 **Hang station:** put a half carcass on the scale and scan any unused hang tag. The first stable weight is saved with that tag.
