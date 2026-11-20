@@ -41,6 +41,7 @@ def match_kill_day(tag_for_reading):
             over_30_months INTEGER,
             dairy INTEGER,
             sex TEXT,
+            offals TEXT,
             recorded_at TEXT NOT NULL
         )
         """

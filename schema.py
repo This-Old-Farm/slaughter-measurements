@@ -20,7 +20,9 @@ MEASUREMENTS_SCHEMA = """
 # rescan of the same ID starts another rather than changing the first.
 # measurement_id links the weight once it is saved, and stays NULL if
 # the animal is scanned again before a weight arrives. Answers stay
-# NULL until they are scanned.
+# NULL until they are scanned. offals is the comma-separated offal
+# codes from the animal ID's QR code, '' when the farmer asked for
+# none, and NULL when the label had no offal list.
 ANIMAL_DETAILS_SCHEMA = """
     CREATE TABLE IF NOT EXISTS animal_details (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,6 +34,7 @@ ANIMAL_DETAILS_SCHEMA = """
         over_30_months INTEGER,
         dairy INTEGER,
         sex TEXT,
+        offals TEXT,
         recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (measurement_id)
             REFERENCES measurements(id)
@@ -82,6 +85,10 @@ def init(conn):
             conn.execute("DROP TABLE animal_details_before_61")
 
         conn.execute(ANIMAL_DETAILS_SCHEMA)
+
+        # Databases created before #71 have no offals column.
+        if "offals" not in columns(conn, "animal_details"):
+            conn.execute("ALTER TABLE animal_details ADD COLUMN offals TEXT")
 
         conn.commit()
 
