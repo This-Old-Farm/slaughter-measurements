@@ -204,6 +204,10 @@ def load_sequences(conn, start, end, weights):
                 "missing": [step for step in steps if answers[step] is None],
                 "measurement_id": measurement_id,
                 "weight": weights.get(measurement_id),
+                # Calculated here for display, never saved (#66).
+                "estimated_weight": scan_sequence.estimate_with_blood(
+                    species, weights.get(measurement_id)
+                ),
                 "recorded_at": recorded_at,
                 "in_use": False,
             }
