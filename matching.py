@@ -157,6 +157,7 @@ def load_sequences(conn, start, end, weights):
             over_30_months,
             dairy,
             sex,
+            offals,
             recorded_at
         FROM animal_details
         WHERE recorded_at >= ? AND recorded_at < ?
@@ -178,6 +179,7 @@ def load_sequences(conn, start, end, weights):
         over_30_months,
         dairy,
         sex,
+        offals,
         recorded_at,
     ) in rows:
         entries[animal_id] = entries.get(animal_id, 0) + 1
@@ -202,6 +204,7 @@ def load_sequences(conn, start, end, weights):
                 "species": species,
                 **answers,
                 "missing": [step for step in steps if answers[step] is None],
+                "offals": offal_list(offals),
                 "measurement_id": measurement_id,
                 "weight": weights.get(measurement_id),
                 "recorded_at": recorded_at,
@@ -210,6 +213,17 @@ def load_sequences(conn, start, end, weights):
         )
 
     return sequences
+
+
+def offal_list(offals):
+    """
+    An animal_details offals column as a list of codes: empty when the
+    farmer asked for none, None when the label had no offal list.
+    """
+    if offals is None:
+        return None
+
+    return [code for code in offals.split(",") if code]
 
 
 def use_best_sequence(scan):
@@ -227,7 +241,7 @@ def use_best_sequence(scan):
         )
         best["in_use"] = True
 
-    for field in ["species", *scan_sequence.YES_NO_CODES, "sex"]:
+    for field in ["species", *scan_sequence.YES_NO_CODES, "sex", "offals"]:
         scan[field] = best[field] if best else None
 
 
@@ -354,6 +368,7 @@ def match(live_scans, hang_scans):
                 "over_30_months": live["over_30_months"],
                 "dairy": live["dairy"],
                 "sex": live["sex"],
+                "offals": live["offals"],
                 "live": live,
                 "hang": hang,
                 "complete": complete,

@@ -14,6 +14,10 @@ apply to the animal's species (#61):
 Every step is required, so a "no" is scanned too. Each answer has its
 own barcode, so a scan meant for another step is rejected instead of
 being recorded as the wrong answer.
+
+The animal ID's QR code also carries the offals the farmer asked to
+keep, in brackets after a space: 1234B [L,H,T]. Empty brackets mean
+the farmer asked for none (#71).
 """
 
 SPECIES_CODES = {
@@ -49,6 +53,18 @@ YES_NO_CODES = {
     "dairy": {"DAIRY": True, "NOTDAIRY": False},
 }
 
+OFFAL_CODES = {
+    "L": "Liver",
+    "H": "Heart",
+    "T": "Tongue",
+    "O": "Oxtail",
+    "K": "Kidney",
+    "SB": "Sweetbreads",
+    "HE": "Head",
+    "HI": "Hide",
+    "CF": "Caul fat",
+}
+
 # What each step is called on screen.
 STEP_LABELS = {
     "firearm": "Firearm",
@@ -81,6 +97,35 @@ def get_species(barcode):
         return None
 
     return SPECIES_CODES.get(barcode[-1])
+
+
+def parse_animal_scan(barcode):
+    """
+    Split an animal ID scan into the ID and its offal codes.
+
+    Returns (animal_id, offals). offals is a list, empty when the
+    farmer asked for none, or None when the scan has no brackets (a
+    label printed before #71). Returns None if the brackets are
+    malformed, such as a scan cut off before the closing bracket.
+    Unknown offal codes are kept as scanned so a label typo still
+    shows on screen.
+    """
+    if "[" not in barcode and "]" not in barcode:
+        return barcode.strip(), None
+
+    animal_id, bracket, rest = barcode.partition("[")
+
+    if not bracket or not rest.endswith("]") or "[" in rest or "]" in rest[:-1]:
+        return None
+
+    animal_id = animal_id.strip()
+    items = rest[:-1].split(",")
+    offals = [item.strip() for item in items if item.strip()]
+
+    if not animal_id:
+        return None
+
+    return animal_id, offals
 
 
 def step_codes(species, step):
