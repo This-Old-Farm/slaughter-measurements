@@ -225,6 +225,30 @@ class MatchDayTest(unittest.TestCase):
         self.assertEqual(animal["checks"]["yield"]["verdict"], "warn")
         self.assertEqual(animal["qa"], ["yield 31.6% outside 52-67% for BEEF"])
 
+    def test_hog_yield_includes_estimated_blood(self):
+        # 218 / 280 lb would be 77.9%, just over the plausible 62-77%;
+        # with 6 lb of blood added back it is 218 / 286 = 76.2%.
+        self.live("88P", "PORK", "Gilt", 280)
+        self.hang("T1", 109)
+        self.hang("T2", 109)
+
+        animal = matching.match_day(self.conn, DATE)["animals"][0]
+
+        self.assertEqual(animal["checks"]["yield"]["percent"], 76.2)
+        self.assertEqual(animal["checks"]["yield"]["verdict"], "ok")
+        self.assertTrue(animal["checks"]["yield"]["with_blood_estimate"])
+        self.assertEqual(animal["live"]["weight"], 280)
+
+    def test_lamb_yield_flag_says_it_includes_estimated_blood(self):
+        self.live("77L", "LAMB", "Lamb", 120)
+        self.hang("T1", 40)
+
+        animal = matching.match_day(self.conn, DATE)["animals"][0]
+
+        self.assertEqual(
+            animal["qa"], ["yield 32.3% outside 42-57% for LAMB (with estimated blood)"]
+        )
+
     def test_uneven_halves_flag_qa(self):
         # Plausible total, but the halves belong to two different animals.
         self.live("1234B", "BEEF", "Steer", 1250)

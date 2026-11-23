@@ -24,13 +24,15 @@ Configuring a computer that currently has only one job: reliably collecting and 
 
 Every step is required, so a "no" is scanned too. A scan meant for a different step is ignored. If the next animal ID is scanned first, the weight and the answers already scanned are kept, and the missing steps are left blank.
 
+Hogs and lambs are bled before they are weighed, so next to their live weight the pages show an **estimate** with the blood added back: hogs +6 lb up to 350 lb, +8 lb up to 500 lb and +10 lb above; lambs +4 lb (#66). The estimate is calculated when it's shown and never saved, so everything in the database is a real measurement.
+
 To start over after a wrong scan, rescan the animal ID. Every scan sequence is kept, even one without a weight. Matching uses the one with the most answers (the newest on a tie) and flags the rest for QA, and the live table on `/display` highlights unfinished and unused sequences.
 
 **Hang station:** put a half carcass on the scale and scan any unused hang tag. The first stable weight is saved with that tag.
 
 Scanning a code that was already weighed today records a reweigh: the new weight is saved and the code keeps its original place in the order.
 
-`matching.py` pairs the nth live animal with the next hang tags in first-scan order (two for beef and pork, one for lamb). It uses each code's most recent valid weight (a zero or negative reading means the scale was empty or hadn't settled, and is never used) and flags for QA: reweighs, codes with no valid weight, a yield (hang total / live weight) outside the species' band, and two halves that differ by more than 15%. It is a prototype that may move to lapis.
+`matching.py` pairs the nth live animal with the next hang tags in first-scan order (two for beef and pork, one for lamb). It uses each code's most recent valid weight (a zero or negative reading means the scale was empty or hadn't settled, and is never used) and flags for QA: reweighs, codes with no valid weight, a yield (hang total / live weight, with the blood estimate for hogs and lambs) outside the species' band, and two halves that differ by more than 15%. It is a prototype that may move to lapis.
 
 Run its tests with:
 
