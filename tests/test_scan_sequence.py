@@ -1,6 +1,6 @@
 import unittest
 
-from scan_sequence import AnimalSequence, estimate_with_blood, get_species
+from scan_sequence import AnimalSequence, estimate_with_blood, get_species, parse_animal_scan
 
 
 class GetSpeciesTest(unittest.TestCase):
@@ -18,6 +18,32 @@ class GetSpeciesTest(unittest.TestCase):
         self.assertIsNone(get_species("B"))
         self.assertIsNone(get_species("L"))
         self.assertIsNone(get_species("CLEAN"))
+
+
+class ParseAnimalScanTest(unittest.TestCase):
+    def test_offals_follow_the_id_in_brackets(self):
+        self.assertEqual(
+            parse_animal_scan("9999B [L,H,T,O,K,SB,HE,HI,CF]"),
+            ("9999B", ["L", "H", "T", "O", "K", "SB", "HE", "HI", "CF"]),
+        )
+
+    def test_empty_brackets_mean_no_offals(self):
+        self.assertEqual(parse_animal_scan("9999B []"), ("9999B", []))
+
+    def test_label_without_brackets_has_no_offal_list(self):
+        self.assertEqual(parse_animal_scan("9999B"), ("9999B", None))
+
+    def test_stray_spaces_are_ignored(self):
+        self.assertEqual(parse_animal_scan("9999B[ L, H ]"), ("9999B", ["L", "H"]))
+
+    def test_unknown_codes_are_kept(self):
+        self.assertEqual(parse_animal_scan("9999P [L,X]"), ("9999P", ["L", "X"]))
+
+    def test_cut_off_scan_is_bad(self):
+        self.assertIsNone(parse_animal_scan("9999B [L,H"))
+        self.assertIsNone(parse_animal_scan("9999B L,H]"))
+        self.assertIsNone(parse_animal_scan("9999B [L]H]"))
+        self.assertIsNone(parse_animal_scan("[L,H]"))
 
 
 class AnimalSequenceTest(unittest.TestCase):

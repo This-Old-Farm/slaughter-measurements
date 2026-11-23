@@ -581,7 +581,7 @@ class Handler(BaseHTTPRequestHandler):
             if last_live_time and current_time:
                 # In descending order, last_live_time is newer than current_time.
                 if (last_live_time - current_time).total_seconds() > 180:
-                    live_rows_list.append("<tr class='time-gap'><td colspan='4'></td></tr>")
+                    live_rows_list.append("<tr class='time-gap'><td colspan='5'></td></tr>")
 
             row_class = "even-row" if r["order_of_slaughter"] % 2 == 0 else ""
             live_rows_list.append(
@@ -589,6 +589,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"<td>{r['order_of_slaughter']}</td>"
                 f"<td>{int(round(r['weight']))}</td>"
                 f"<td>{html.escape(format_indiana_time(current_time))}</td>"
+                "<td></td>"
                 "<td></td>"
                 "</tr>"
             )
@@ -701,6 +702,7 @@ class Handler(BaseHTTPRequestHandler):
             "<th>Weight</th>"
             "<th>Recorded At</th>"
             "<th>Scans</th>"
+            "<th>Offals</th>"
             "</tr>"
             "<tbody id='live-table-body'>"
             f"{live_rows_html}"
@@ -761,6 +763,10 @@ class Handler(BaseHTTPRequestHandler):
             "function estimateCell(scans) {"
             "    return scans && scans.estimate !== null ? Math.round(scans.estimate) : '';"
             "}"
+            "function offalText(offals) {"
+            "    if (offals === null) return 'Not on label';"
+            "    return offals.length ? offals.join(', ') : 'None';"
+            "}"
             "function liveScanRows(data, matches) {"
             "    const statuses = {};"
             "    const unweighed = [];"
@@ -771,6 +777,7 @@ class Handler(BaseHTTPRequestHandler):
             "                text: scanStatus(animal.animal_id, seq, sequences.length),"
             "                flagged: !seq.in_use || seq.missing.length > 0,"
             "                estimate: seq.estimated_weight,"
+            "                offals: offalText(seq.offals),"
             "            };"
             "            if (seq.measurement_id === null) {"
             "                unweighed.push({order_of_slaughter: '—', weight: '—',"
@@ -806,7 +813,7 @@ class Handler(BaseHTTPRequestHandler):
             "                if (lastLiveTime && (lastLiveTime - currentTime) > 180000) {"
             "                    const gapRow = document.createElement('tr');"
             "                    gapRow.className = 'time-gap';"
-            "                    gapRow.innerHTML = `<td colspan='4'></td>`;"
+            "                    gapRow.innerHTML = `<td colspan='5'></td>`;"
             "                    liveTableBody.appendChild(gapRow);"
             "                }"
             "                const row = document.createElement('tr');"
@@ -816,9 +823,11 @@ class Handler(BaseHTTPRequestHandler):
             "                    row.className = 'even-row';"
             "                }"
             "                const scans = r.scans ? escapeHtml(r.scans.text) : '';"
+            "                const offals = r.scans ? escapeHtml(r.scans.offals) : '';"
             "                row.innerHTML = `<td>${r.order_of_slaughter}</td>`"
             "                    + `<td>${r.weight}${estimateHtml(r.scans)}</td>`"
-            "                    + `<td>${formatIndianaTime(r.recorded_at)}</td><td>${scans}</td>`;"
+            "                    + `<td>${formatIndianaTime(r.recorded_at)}</td><td>${scans}</td>`"
+            "                    + `<td>${offals}</td>`;"
             "                liveTableBody.appendChild(row);"
             "                lastLiveTime = currentTime;"
             "            });"
@@ -863,12 +872,14 @@ class Handler(BaseHTTPRequestHandler):
             "            const hangRows = result.data.filter(r => r.station === 'hang');"
             "            const liveSheet = [["
             "                'Order', 'Weight', 'Estimate with blood', 'Recorded At', 'Scans',"
+            "                'Offals',"
             "            ]];"
             "            liveRows.forEach(r => liveSheet.push(["
             "                r.order_of_slaughter, r.weight,"
             "                estimateCell(r.scans),"
             "                formatIndianaTime(r.recorded_at),"
             "                r.scans ? r.scans.text : '',"
+            "                r.scans ? r.scans.offals : '',"
             "            ]));"
             "            const hangSheet = [['Order', 'Weight', 'Recorded At']];"
             "            hangRows.forEach(r => hangSheet.push([r.order_of_slaughter, r.weight, formatIndianaTime(r.recorded_at)]));"

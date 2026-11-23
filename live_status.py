@@ -11,6 +11,17 @@ import matching
 import scan_sequence
 
 
+def offal_names(codes):
+    """
+    The offals to show for a list of codes, or None when the label had
+    no offal list. An unknown code shows as scanned.
+    """
+    if codes is None:
+        return None
+
+    return [{"code": code, "name": scan_sequence.OFFAL_CODES.get(code, code)} for code in codes]
+
+
 def current_animal(animal, sequence):
     steps = []
 
@@ -41,6 +52,7 @@ def current_animal(animal, sequence):
         # A reading with no carcass in it, so the weight needs a rescan.
         "weight_failed": weight is not None and matching.capture_failed(weight),
         "steps": steps,
+        "offals": offal_names(sequence["offals"]),
         "next_step": sequence["missing"][0] if sequence["missing"] else None,
     }
 
@@ -79,6 +91,7 @@ def live_status(conn, date):
                 "answers": {
                     step: animal[step] for step in scan_sequence.STEPS.get(animal["species"], [])
                 },
+                "offals": offal_names(animal["offals"]),
                 # Hang-station flags belong to another screen, and on
                 # the live station's own screen "live " goes without
                 # saying.

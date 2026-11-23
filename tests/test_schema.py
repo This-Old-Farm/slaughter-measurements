@@ -16,6 +16,32 @@ class InitTest(unittest.TestCase):
 
         self.assertIn("scan_code", schema.columns(self.conn, "measurements"))
         self.assertIn("firearm", schema.columns(self.conn, "animal_details"))
+        self.assertIn("offals", schema.columns(self.conn, "animal_details"))
+
+    def test_details_from_before_71_get_offals(self):
+        self.conn.execute(
+            """
+            CREATE TABLE animal_details (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                measurement_id INTEGER UNIQUE,
+                animal_id TEXT NOT NULL,
+                species TEXT NOT NULL,
+                sex TEXT
+            )
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO animal_details (animal_id, species) VALUES ('1234B', 'BEEF')"
+        )
+        self.conn.commit()
+
+        schema.init(self.conn)
+        schema.init(self.conn)
+
+        self.assertEqual(
+            self.conn.execute("SELECT animal_id, offals FROM animal_details").fetchall(),
+            [("1234B", None)],
+        )
 
     def test_details_from_before_61_are_rebuilt_and_kept(self):
         self.conn.executescript(

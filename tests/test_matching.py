@@ -36,6 +36,7 @@ class MatchDayTest(unittest.TestCase):
                 over_30_months INTEGER,
                 dairy INTEGER,
                 sex TEXT,
+                offals TEXT,
                 recorded_at TEXT NOT NULL
             )
             """

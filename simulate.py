@@ -42,11 +42,19 @@ SCANNER_KEYS = [
     ecodes.KEY_9,
     ecodes.KEY_MINUS,
     ecodes.KEY_ENTER,
+    ecodes.KEY_SPACE,
+    ecodes.KEY_LEFTBRACE,
+    ecodes.KEY_RIGHTBRACE,
+    ecodes.KEY_COMMA,
 ] + [getattr(ecodes, f"KEY_{c}") for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"]
 
 CHAR_TO_KEY = {str(d): f"KEY_{d}" for d in range(10)}
 CHAR_TO_KEY.update({c: f"KEY_{c}" for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"})
 CHAR_TO_KEY["-"] = "KEY_MINUS"
+CHAR_TO_KEY[" "] = "KEY_SPACE"
+CHAR_TO_KEY["["] = "KEY_LEFTBRACE"
+CHAR_TO_KEY["]"] = "KEY_RIGHTBRACE"
+CHAR_TO_KEY[","] = "KEY_COMMA"
 
 
 def find_scanner_node(name, timeout=5.0):
