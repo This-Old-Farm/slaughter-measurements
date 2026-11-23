@@ -24,13 +24,15 @@ Configuring a computer that currently has only one job: reliably collecting and 
 
 Every step is required, so a "no" is scanned too. A scan meant for a different step is ignored. If the next animal ID is scanned first, the weight and the answers already scanned are kept, and the missing steps are left blank.
 
+Hogs and lambs are bled before they are weighed, so next to their live weight the pages show an **estimate** with the blood added back: hogs +6 lb up to 350 lb, +8 lb up to 500 lb and +10 lb above; lambs +4 lb (#66). The estimate is calculated when it's shown and never saved, so everything in the database is a real measurement.
+
 To start over after a wrong scan, rescan the animal ID. Every scan sequence is kept, even one without a weight. Matching uses the one with the most answers (the newest on a tie) and flags the rest for QA, and the live table on `/display` highlights unfinished and unused sequences.
 
 **Hang station:** put a half carcass on the scale and scan any unused hang tag. The first stable weight is saved with that tag.
 
 Scanning a code that was already weighed today records a reweigh: the new weight is saved and the code keeps its original place in the order.
 
-`matching.py` pairs the nth live animal with the next hang tags in first-scan order (two for beef and pork, one for lamb). It uses each code's most recent valid weight (a zero or negative reading means the scale was empty or hadn't settled, and is never used) and flags for QA: reweighs, codes with no valid weight, a yield (hang total / live weight) outside the species' band, and two halves that differ by more than 15%. It is a prototype that may move to lapis.
+`matching.py` pairs the nth live animal with the next hang tags in first-scan order (two for beef and pork, one for lamb). It uses each code's most recent valid weight (a zero or negative reading means the scale was empty or hadn't settled, and is never used) and flags for QA: reweighs, codes with no valid weight, a yield (hang total / live weight, with the blood estimate for hogs and lambs) outside the species' band, and two halves that differ by more than 15%. It is a prototype that may move to lapis.
 
 Run its tests with:
 
@@ -73,7 +75,7 @@ The scanner was successfully tested with:
 sudo evtest /dev/input/event14
 ```
 
-### Scale Indicator
+### Live Scale Indicator
 
 The scale indicator is an MSI-8000HD connected directly to the laptop's built-in RS-232 serial port.
 
@@ -97,6 +99,45 @@ This is commonly written as:
 ``` text
 9600-8-N-1
 ```
+
+### Hang Scale Indicator
+
+The hang station's scale indicator is a Rice Lake IQ355+, connected through a Prolific USB-to-serial adapter.
+
+Linux exposes the adapter as `/dev/ttyUSB0`. The PC's cellular modem also takes `ttyUSB` numbers, so check which one the adapter got with:
+
+``` bash
+ls -l /dev/serial/by-id/
+```
+
+The IQ355+ must stream continuously, with these settings (a reset of the indicator clears them):
+
+``` text
+Stream:     EDP
+Serial:     9600-8-N-1
+Units:      pounds
+Mode:       gross
+```
+
+`listen.py` expects each reading as `<STX><polarity><7-char weight><unit><G/N><status><CR><LF>` and saves the first stable one after a hang tag is scanned.
+
+To see what the indicator is sending, stop listen (it holds the port), watch the port in hex with minicom, then start listen again:
+
+``` bash
+sudo systemctl stop listen-slaughter-measurements
+sudo minicom -D /dev/ttyUSB0 -b 9600 -8 -H
+sudo systemctl start listen-slaughter-measurements
+```
+
+Nothing is recorded while listen is stopped. Quit minicom with Ctrl-A, then X. A good stable reading of 16.0 lb, captured from the scale, looks like:
+
+``` text
+02 20 20 20 20 31 36 2e 30 4c 47 20 0d 0a
+```
+
+That is STX, a space (positive), `   16.0`, `L` (pounds), `G` (gross), a space (stable; `M` means moving), then CR LF. The scale repeats it continuously.
+
+If minicom shows only `bf`, `fb`, `fe` and similar bytes, the indicator's port, wiring or stream setting is wrong. If nothing appears, turn off Hardware Flow Control in minicom (Ctrl-A, then O, Serial port setup).
 
 ## Software Requirements
 
