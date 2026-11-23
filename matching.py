@@ -207,6 +207,10 @@ def load_sequences(conn, start, end, weights):
                 "offals": offal_list(offals),
                 "measurement_id": measurement_id,
                 "weight": weights.get(measurement_id),
+                # Calculated here for display, never saved (#66).
+                "estimated_weight": scan_sequence.estimate_with_blood(
+                    species, weights.get(measurement_id)
+                ),
                 "recorded_at": recorded_at,
                 "in_use": False,
             }
@@ -340,13 +344,21 @@ def match(live_scans, hang_scans):
         checks = {"yield": None, "balance": None}
 
         if complete:
-            checks["yield"] = check_yield(live["species"], live["weight"], hang_weights)
+            # Hogs and lambs are bled before weighing, so their yield is
+            # against the live weight with the estimated blood added back
+            # (#66). The estimate is calculated here, never saved.
+            blood_estimate = scan_sequence.estimate_with_blood(live["species"], live["weight"])
+            yield_live_weight = blood_estimate if blood_estimate is not None else live["weight"]
+
+            checks["yield"] = check_yield(live["species"], yield_live_weight, hang_weights)
+            checks["yield"]["with_blood_estimate"] = blood_estimate is not None
 
             if checks["yield"]["verdict"] == "warn":
                 low, high = checks["yield"]["plausible"]
                 qa.append(
                     f"yield {checks['yield']['percent']}% outside {low:g}-{high:g}% "
                     f"for {live['species']}"
+                    + (" (with estimated blood)" if blood_estimate is not None else "")
                 )
 
             if tags_needed == 2:

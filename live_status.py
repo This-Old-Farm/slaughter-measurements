@@ -46,6 +46,9 @@ def current_animal(animal, sequence):
         "entry": sequence["entry"],
         "entries": len(animal["live"]["sequences"]),
         "weight": None if weight is None or matching.capture_failed(weight) else weight,
+        # Hogs and lambs are bled before weighing. Calculated for
+        # display, never saved (#66).
+        "estimated_weight": scan_sequence.estimate_with_blood(sequence["species"], weight),
         # A reading with no carcass in it, so the weight needs a rescan.
         "weight_failed": weight is not None and matching.capture_failed(weight),
         "steps": steps,
@@ -80,6 +83,9 @@ def live_status(conn, date):
                 "animal_id": animal["animal_id"],
                 "species": animal["species"],
                 "weight": animal["live"]["weight"],
+                "estimated_weight": scan_sequence.estimate_with_blood(
+                    animal["species"], animal["live"]["weight"]
+                ),
                 # Only the steps that apply to the species, so a missing
                 # key means "doesn't apply" and None means "not scanned".
                 "answers": {

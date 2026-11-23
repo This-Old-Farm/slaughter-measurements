@@ -114,6 +114,21 @@ class LiveStatusTest(unittest.TestCase):
         self.assertTrue(current["weight_failed"])
         self.assertIsNone(current["next_step"])
 
+    def test_hogs_and_lambs_get_a_blood_estimate_next_to_the_reading(self):
+        self.sequence("1234B", "BEEF", self.weigh("1234B", 1250))
+        self.sequence("1235P", "PORK", self.weigh("1235P", 280), time="12:10:00")
+        self.sequence("1236L", "LAMB", self.weigh("1236L", 110), time="12:20:00")
+
+        status = live_status(self.conn, DATE)
+
+        self.assertEqual(
+            [(a["weight"], a["estimated_weight"]) for a in status["animals"]],
+            [(1250, None), (280, 286), (110, 114)],
+        )
+        self.assertEqual(
+            (status["current"]["weight"], status["current"]["estimated_weight"]), (110, 114)
+        )
+
     def test_offals_show_by_name(self):
         self.sequence("1234B", "BEEF", self.weigh("1234B", 1250), offals="L,SB,X")
         self.sequence("1235P", "PORK", time="12:10:00", offals="")
