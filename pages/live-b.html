@@ -40,6 +40,7 @@
   h2 { margin: 0 0 0.5em; font-size: 1em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
   #animal { font-size: 2.4em; font-weight: 800; }
   #meta { color: var(--muted); margin-bottom: 0.4em; }
+  #offals { font-size: 1.3em; font-weight: 700; margin: 0.3em 0; }
   #rescan { color: var(--warn); font-weight: 700; }
   ol { list-style: none; padding: 0; margin: 0.6em 0 0; }
   li {
@@ -78,6 +79,7 @@
     <h2>Now scanning</h2>
     <div id="animal">Scan an animal ID</div>
     <div id="meta"></div>
+    <div id="offals"></div>
     <div id="rescan"></div>
     <ol id="steps"></ol>
     <div id="status"></div>
@@ -134,9 +136,17 @@ function withEstimate(node, estimate) {
   return node;
 }
 
+// The offals the farmer asked to keep (#71). null means the label had
+// no offal list; an empty list means the farmer asked for none.
+function offalText(offals, part) {
+  if (offals === null) return 'Not on label';
+  if (!offals.length) return 'None';
+  return offals.map(o => o[part]).join(', ');
+}
+
 function renderHead(head, steps) {
   const row = el('tr');
-  ['#', 'Animal', 'Weight', ...steps.map(s => s.label), 'Flags'].forEach(label => {
+  ['#', 'Animal', 'Weight', ...steps.map(s => s.label), 'Offals', 'Flags'].forEach(label => {
     row.appendChild(el('th', label === 'Flags' ? 'flagcol' : '', label));
   });
   head.replaceChildren(row);
@@ -149,6 +159,7 @@ function animalRow(a, steps, className) {
   row.appendChild(withEstimate(
     el('td', '', a.weight !== null ? `${Math.round(a.weight)} lb` : '-'), a.estimated_weight));
   steps.forEach(s => row.appendChild(answerCell(a, s.step)));
+  row.appendChild(el('td', '', offalText(a.offals, 'code')));
   row.appendChild(el('td', a.qa.length ? 'flag flagcol' : 'flagcol', a.qa.join('; ')));
   return row;
 }
@@ -167,6 +178,7 @@ function render(status) {
   $('rescan').textContent = '';
   $('status').className = '';
   $('status').textContent = '';
+  $('offals').textContent = '';
 
   if (!current) {
     $('animal').textContent = 'Scan an animal ID';
@@ -174,6 +186,7 @@ function render(status) {
   } else {
     $('animal').textContent = current.animal_id;
     $('meta').textContent = `${current.species} - #${current.order}`;
+    $('offals').textContent = `Offals: ${offalText(current.offals, 'name')}`;
 
     if (current.entries > 1) {
       $('rescan').textContent = `Rescan: entry ${current.entry} of ${current.entries}`;

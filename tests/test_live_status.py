@@ -29,6 +29,7 @@ class LiveStatusTest(unittest.TestCase):
                 over_30_months INTEGER,
                 dairy INTEGER,
                 sex TEXT,
+                offals TEXT,
                 recorded_at TEXT NOT NULL
             );
             """
@@ -127,6 +128,25 @@ class LiveStatusTest(unittest.TestCase):
         self.assertEqual(
             (status["current"]["weight"], status["current"]["estimated_weight"]), (110, 114)
         )
+
+    def test_offals_show_by_name(self):
+        self.sequence("1234B", "BEEF", self.weigh("1234B", 1250), offals="L,SB,X")
+        self.sequence("1235P", "PORK", time="12:10:00", offals="")
+        self.sequence("1236L", "LAMB", time="12:20:00")
+
+        status = live_status(self.conn, DATE)
+
+        self.assertEqual(
+            status["animals"][0]["offals"],
+            [
+                {"code": "L", "name": "Liver"},
+                {"code": "SB", "name": "Sweetbreads"},
+                {"code": "X", "name": "X"},
+            ],
+        )
+        self.assertEqual(status["animals"][1]["offals"], [])
+        self.assertIsNone(status["animals"][2]["offals"])
+        self.assertIsNone(status["current"]["offals"])
 
     def test_animals_show_only_live_flags(self):
         self.sequence("1234L", "LAMB", self.weigh("1234L", 110), firearm=0)

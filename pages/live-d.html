@@ -52,6 +52,7 @@
   #prompt.failed { color: var(--warn); font-size: clamp(2em, 6vw, 4em); }
   #codes { font-size: 2em; margin-top: 0.4em; }
   #codes span { display: inline-block; margin: 0 0.5em; }
+  #offals { font-size: 1.6em; font-weight: 700; margin-top: 0.8em; }
   #tiles {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -99,6 +100,7 @@
   <div id="prompt">Scan an animal ID</div>
   <div id="codes"></div>
   <div id="tiles"></div>
+  <div id="offals"></div>
 </main>
 <footer>
   <table><thead id="recent-head"></thead><tbody id="recent"></tbody></table>
@@ -132,9 +134,17 @@ function answerCell(animal, step) {
   return el('td', answer === true ? 'yes' : '', formatAnswer(answer));
 }
 
+// The offals the farmer asked to keep (#71). null means the label had
+// no offal list; an empty list means the farmer asked for none.
+function offalText(offals, part) {
+  if (offals === null) return 'Not on label';
+  if (!offals.length) return 'None';
+  return offals.map(o => o[part]).join(', ');
+}
+
 function renderHead(head, steps) {
   const row = el('tr');
-  ['#', 'Animal', 'Weight', ...steps.map(s => s.label), 'Flags'].forEach(label => {
+  ['#', 'Animal', 'Weight', ...steps.map(s => s.label), 'Offals', 'Flags'].forEach(label => {
     row.appendChild(el('th', label === 'Flags' ? 'flagcol' : '', label));
   });
   head.replaceChildren(row);
@@ -146,6 +156,7 @@ function animalRow(a, steps) {
   row.appendChild(el('td', '', a.animal_id));
   row.appendChild(el('td', '', a.weight !== null ? `${Math.round(a.weight)} lb` : '-'));
   steps.forEach(s => row.appendChild(answerCell(a, s.step)));
+  row.appendChild(el('td', '', offalText(a.offals, 'code')));
   row.appendChild(el('td', a.qa.length ? 'flag flagcol' : 'flagcol', a.qa.join('; ')));
   return row;
 }
@@ -164,6 +175,7 @@ function render(status) {
   $('codes').replaceChildren();
   tiles.replaceChildren();
   $('rescan').textContent = '';
+  $('offals').textContent = '';
   $('prompt-label').textContent = '';
   prompt.className = '';
 
@@ -172,6 +184,7 @@ function render(status) {
     prompt.textContent = 'Scan an animal ID';
   } else {
     $('animal').textContent = `#${current.order}  ${current.animal_id}  ${current.species}`;
+    $('offals').textContent = `Offals: ${offalText(current.offals, 'name')}`;
 
     if (current.entries > 1) {
       $('rescan').textContent = `Rescan: entry ${current.entry} of ${current.entries}`;
