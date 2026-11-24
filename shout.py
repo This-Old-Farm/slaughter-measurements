@@ -16,6 +16,10 @@ Endpoints:
         JSON of live animals matched to hang tags for a day
         (default today), with QA flags. See matching.py.
 
+    GET /weightslip[?date=YYYY-MM-DD]
+        A day's finished animals laid out like the Weight Slip sheet,
+        to copy and paste in until LAPIS can (#77). See weight_slip.py.
+
     GET /live, /live/a, /live/b, /live/c, /live/d
         Candidate live-station pages (#62), all fed by
         GET /live_status: the animal being scanned now and today's
@@ -53,6 +57,7 @@ import live_status
 import local_time
 import matching
 import schema
+import weight_slip
 
 # ============================================================
 # Configuration
@@ -476,6 +481,34 @@ class Handler(BaseHTTPRequestHandler):
                     indent=2,
                 ),
                 "application/json",
+            )
+
+            return
+
+        # ====================================================
+        # Weight Slip page (temporary, #77)
+        # ====================================================
+
+        if parsed.path == "/weightslip":
+            date_str = qs.get("date", [local_time.local_today().isoformat()])[0]
+
+            conn = sqlite3.connect(DB_PATH)
+
+            try:
+                result = matching.match_day(conn, date_str)
+
+            except ValueError:
+                self._send(400, "date must be YYYY-MM-DD", "text/plain")
+
+                return
+
+            finally:
+                conn.close()
+
+            self._send(
+                200,
+                weight_slip.render(date_str, weight_slip.weight_slip(result)),
+                "text/html; charset=utf-8",
             )
 
             return
