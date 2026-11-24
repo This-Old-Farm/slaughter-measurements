@@ -45,7 +45,9 @@ class MatchDayTest(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
-    def live(self, animal_id, species, sex, weight, over_30_months=False, time="12:00:00"):
+    def live(
+        self, animal_id, species, sex, weight, over_30_months=False, dairy=False, time="12:00:00"
+    ):
         recorded_at = f"{DATE} {time}"
         cursor = self.conn.execute(
             "INSERT INTO measurements (order_of_slaughter, scan_code, station, weight, recorded_at)"
@@ -59,7 +61,7 @@ class MatchDayTest(unittest.TestCase):
             firearm=False,
             dirty=False,
             over_30_months=over_30_months,
-            dairy=False,
+            dairy=dairy,
             sex=sex,
             time=time,
         )
@@ -302,6 +304,38 @@ class MatchDayTest(unittest.TestCase):
             (animal_id, weight, f"{DATE} {time}"),
         )
         return cursor.lastrowid
+
+    def test_dairy_that_is_not_a_cow_flags_qa(self):
+        self.live("1234B", "BEEF", "Steer", 1250, dairy=True)
+
+        animal = matching.match_day(self.conn, DATE)["animals"][0]
+
+        self.assertTrue(animal["dairy"])
+        self.assertEqual(animal["sex"], "Steer")
+        self.assertEqual(animal["qa"], ["marked dairy but sex/type is Steer, not Cow"])
+
+    def test_dairy_cow_and_non_dairy_steer_are_not_flagged(self):
+        self.live("1234B", "BEEF", "Cow", 1250, dairy=True)
+        self.live("5678B", "BEEF", "Steer", 1250, dairy=False)
+
+        animals = matching.match_day(self.conn, DATE)["animals"]
+
+        self.assertEqual([a["qa"] for a in animals], [[], []])
+
+    def test_dairy_without_sex_is_only_flagged_as_missing(self):
+        self.sequence(
+            "1234B",
+            "BEEF",
+            measurement_id=self.weigh("1234B", 1250),
+            firearm=False,
+            dirty=False,
+            over_30_months=False,
+            dairy=True,
+        )
+
+        animal = matching.match_day(self.conn, DATE)["animals"][0]
+
+        self.assertEqual(animal["qa"], ["live scan sequence missing sex"])
 
     def test_unscanned_steps_are_none_not_no_and_flag_qa(self):
         self.sequence(

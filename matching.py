@@ -328,6 +328,11 @@ def match(live_scans, hang_scans):
         if in_use and in_use[0]["missing"]:
             qa.append(f"live scan sequence missing {', '.join(in_use[0]['missing'])}")
 
+        # Only cows can be dairy, so another sex marked dairy is likely a
+        # wrong scan. It's saved as scanned and only flagged here (#76).
+        if live["dairy"] and live["sex"] is not None and live["sex"] != "Cow":
+            qa.append(f"marked dairy but sex/type is {live['sex']}, not Cow")
+
         hang = hang_scans[hang_index : hang_index + tags_needed]
         hang_index += len(hang)
 
