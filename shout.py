@@ -139,6 +139,15 @@ def get_next_order_of_slaughter(station_name, conn):
     return max_order + 1
 
 
+def carcass_id(scan_code):
+    """
+    A hang tag as /display shows it: the date before the dash dropped
+    and lowercased ("261118-1A" -> "1a"). Only for showing; matching
+    never reads the tag's text.
+    """
+    return scan_code.split("-", 1)[-1].lower()
+
+
 def format_indiana_time(date_obj):
     """
     Format a naive UTC datetime read from recorded_at as an Indiana
@@ -638,7 +647,7 @@ class Handler(BaseHTTPRequestHandler):
             current_time = parse_db_date(r["recorded_at"])
             if last_hang_time and current_time:
                 if (last_hang_time - current_time).total_seconds() > 180:
-                    hang_rows_list.append("<tr class='time-gap'><td colspan='3'></td></tr>")
+                    hang_rows_list.append("<tr class='time-gap'><td colspan='4'></td></tr>")
 
             row_class = (
                 "row-pair-colored" if math.ceil(r["order_of_slaughter"] / 2) % 2 == 0 else ""
@@ -646,6 +655,7 @@ class Handler(BaseHTTPRequestHandler):
             hang_rows_list.append(
                 f'<tr class="{row_class}">'
                 f"<td>{r['order_of_slaughter']}</td>"
+                f"<td>{html.escape(carcass_id(r['scan_code']))}</td>"
                 f"<td>{int(round(r['weight']))}</td>"
                 f"<td>{html.escape(format_indiana_time(current_time))}</td>"
                 "</tr>"
@@ -751,6 +761,7 @@ class Handler(BaseHTTPRequestHandler):
             "<table>"
             "<tr>"
             "<th>Order</th>"
+            "<th>Carcass ID</th>"
             "<th>Weight</th>"
             "<th>Recorded At</th>"
             "</tr>"
@@ -768,6 +779,10 @@ class Handler(BaseHTTPRequestHandler):
             "         .replace(/>/g, '&gt;')"
             "         .replace(/\"/g, '&quot;')"
             "         .replace(/'/g, '&#039;');"
+            "}"
+            "function carcassId(scanCode) {"
+            "    const code = scanCode || '';"
+            "    return code.slice(code.indexOf('-') + 1).toLowerCase();"
             "}"
             "function formatIndianaTime(utcString) {"
             "    if (!utcString) return '';"
@@ -883,7 +898,7 @@ class Handler(BaseHTTPRequestHandler):
             "                if (lastHangTime && (lastHangTime - currentTime) > 180000) {"
             "                    const gapRow = document.createElement('tr');"
             "                    gapRow.className = 'time-gap';"
-            "                    gapRow.innerHTML = `<td colspan='3'></td>`;"
+            "                    gapRow.innerHTML = `<td colspan='4'></td>`;"
             "                    hangTableBody.appendChild(gapRow);"
             "                }"
             "                const row = document.createElement('tr');"
@@ -891,7 +906,8 @@ class Handler(BaseHTTPRequestHandler):
             "                if (group % 2 === 0) {"
             "                    row.className = 'row-pair-colored';"
             "                }"
-            "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${r.weight}</td><td>${formatIndianaTime(r.recorded_at)}</td>`;"
+            "                row.innerHTML = `<td>${r.order_of_slaughter}</td><td>${escapeHtml(carcassId(r.scan_code))}</td>`"
+            "                    + `<td>${r.weight}</td><td>${formatIndianaTime(r.recorded_at)}</td>`;"
             "                hangTableBody.appendChild(row);"
             "                lastHangTime = currentTime;"
             "            });"
@@ -928,8 +944,10 @@ class Handler(BaseHTTPRequestHandler):
             "                r.scans ? r.scans.text : '',"
             "                r.scans ? r.scans.offals : '',"
             "            ]));"
-            "            const hangSheet = [['Order', 'Weight', 'Recorded At']];"
-            "            hangRows.forEach(r => hangSheet.push([r.order_of_slaughter, r.weight, formatIndianaTime(r.recorded_at)]));"
+            "            const hangSheet = [['Order', 'Carcass ID', 'Weight', 'Recorded At']];"
+            "            hangRows.forEach(r => hangSheet.push(["
+            "                r.order_of_slaughter, carcassId(r.scan_code), r.weight, formatIndianaTime(r.recorded_at),"
+            "            ]));"
             "            const wb = XLSX.utils.book_new();"
             "            const wsLive = XLSX.utils.aoa_to_sheet(liveSheet);"
             "            const wsHang = XLSX.utils.aoa_to_sheet(hangSheet);"
